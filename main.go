@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,20 +23,20 @@ import (
 var (
 	stylesReady bool
 
-	titleStyle      lipgloss.Style
-	successStyle    lipgloss.Style
-	mutedStyle      lipgloss.Style
-	errorStyle      lipgloss.Style
-	accountStyle    lipgloss.Style
-	labelStyle      lipgloss.Style
-	barFillStyle    lipgloss.Style
-	barEmptyStyle   lipgloss.Style
+	titleStyle       lipgloss.Style
+	successStyle     lipgloss.Style
+	mutedStyle       lipgloss.Style
+	errorStyle       lipgloss.Style
+	accountStyle     lipgloss.Style
+	labelStyle       lipgloss.Style
+	barFillStyle     lipgloss.Style
+	barEmptyStyle    lipgloss.Style
 	criticalBarStyle lipgloss.Style
-	activeBarStyle  lipgloss.Style
-	whoamiKeyStyle  lipgloss.Style
-	whoamiValStyle  lipgloss.Style
-	helpTitleStyle  lipgloss.Style
-	helpCmdStyle    lipgloss.Style
+	activeBarStyle   lipgloss.Style
+	whoamiKeyStyle   lipgloss.Style
+	whoamiValStyle   lipgloss.Style
+	helpTitleStyle   lipgloss.Style
+	helpCmdStyle     lipgloss.Style
 )
 
 func initStyles() {
@@ -268,6 +267,30 @@ func cmdUse(name string) {
 	printSuccess(fmt.Sprintf("Switched active account to %s", accountStyle.Render(name)))
 }
 
+func oauthFieldPlain(oauth map[string]any, key string) string {
+	value, ok := whoamiFieldValue(oauth[key])
+	if !ok {
+		return "—"
+	}
+	return formatWhoamiField(key, value)
+}
+
+func savedOAuthAccount(name string) (map[string]any, bool) {
+	snap, err := readJSONObject(filepath.Join(storeDir(), name+".json"))
+	if err != nil {
+		return nil, false
+	}
+	oauthVal, ok := snap["oauthAccount"]
+	if !ok || oauthVal == nil {
+		return nil, false
+	}
+	m, ok := oauthVal.(map[string]any)
+	if !ok || len(m) == 0 {
+		return nil, false
+	}
+	return m, true
+}
+
 func cmdList() {
 	initStyles()
 	entries, err := os.ReadDir(storeDir())
@@ -288,10 +311,24 @@ func cmdList() {
 	}
 	sort.Strings(names)
 
+	active, _ := activeOAuthAccount()
+	activeRows := make([]bool, len(names))
 	rows := make([][]string, len(names))
-	for i, n := range names {
-		rows[i] = []string{n}
+	for i, name := range names {
+		activeRows[i] = isActiveSavedAccount(name, active)
+		account := name
+		if activeRows[i] {
+			account = "● " + name
+		}
+		email, org, typ := "—", "—", "—"
+		if oauth, ok := savedOAuthAccount(name); ok {
+			email = oauthFieldPlain(oauth, "emailAddress")
+			org = oauthFieldPlain(oauth, "organizationName")
+			typ = oauthFieldPlain(oauth, "organizationType")
+		}
+		rows[i] = []string{account, email, org, typ}
 	}
+
 	t := table.New().
 		Border(lipgloss.NormalBorder()).
 		BorderStyle(mutedStyle).
@@ -299,9 +336,15 @@ func cmdList() {
 			if row == table.HeaderRow {
 				return labelStyle.Bold(true)
 			}
-			return accountStyle
+			if activeRows[row] && col == 0 {
+				return accountStyle.Bold(true).Foreground(lipgloss.Color("42"))
+			}
+			if col == 0 {
+				return accountStyle
+			}
+			return whoamiValStyle
 		}).
-		Headers("Saved account").
+		Headers("Account", "Email", "Organization", "Type").
 		Rows(rows...)
 	fmt.Println(t)
 }
@@ -724,26 +767,34 @@ func cmdUsage(names []string) {
 	}
 }
 
-func formatWhoamiValue(v any) string {
+var whoamiFields = []struct {
+	key   string
+	label string
+}{
+	{"displayName", "Name"},
+	{"emailAddress", "Email"},
+	{"organizationName", "Organization"},
+	{"organizationType", "Type"},
+}
+
+func whoamiFieldValue(v any) (string, bool) {
+	if v == nil {
+		return "", false
+	}
 	switch val := v.(type) {
 	case string:
-		return val
-	case float64:
-		if val == float64(int64(val)) {
-			return strconv.FormatInt(int64(val), 10)
-		}
-		return strconv.FormatFloat(val, 'f', -1, 64)
-	case bool:
-		return strconv.FormatBool(val)
-	case nil:
-		return mutedStyle.Render("(none)")
+		s := strings.TrimSpace(val)
+		return s, s != ""
 	default:
-		data, err := json.MarshalIndent(val, "", "  ")
-		if err != nil {
-			return fmt.Sprint(val)
-		}
-		return string(data)
+		return "", false
 	}
+}
+
+func formatWhoamiField(key, value string) string {
+	if key == "organizationType" || key == "billingType" {
+		return cases.Title(language.English).String(strings.ReplaceAll(value, "_", " "))
+	}
+	return value
 }
 
 func printWhoami(oauth any) {
@@ -758,15 +809,38 @@ func printWhoami(oauth any) {
 		return
 	}
 
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+	var lines []struct {
+		label string
+		value string
 	}
-	sort.Strings(keys)
+	for _, field := range whoamiFields {
+		value, ok := whoamiFieldValue(m[field.key])
+		if !ok {
+			continue
+		}
+		lines = append(lines, struct {
+			label string
+			value string
+		}{field.label, formatWhoamiField(field.key, value)})
+	}
+	if len(lines) == 0 {
+		printMuted("(no active account)")
+		return
+	}
+
+	labelWidth := 0
+	for _, line := range lines {
+		if w := lipgloss.Width(line.label + ":"); w > labelWidth {
+			labelWidth = w
+		}
+	}
 
 	fmt.Println(titleStyle.Render("Active account"))
-	for _, k := range keys {
-		fmt.Printf("  %s %s\n", whoamiKeyStyle.Render(k+":"), whoamiValStyle.Render(formatWhoamiValue(m[k])))
+	for _, line := range lines {
+		fmt.Printf("  %s %s\n",
+			whoamiKeyStyle.Width(labelWidth).Align(lipgloss.Right).Render(line.label+":"),
+			whoamiValStyle.Render(line.value),
+		)
 	}
 }
 
@@ -789,8 +863,8 @@ func cmdHelp() {
 	}{
 		{"cc-switch save [name]", "snapshot the currently logged-in account"},
 		{"cc-switch use [name]", "switch to a saved account"},
-		{"cc-switch list", "list saved account names"},
-		{"cc-switch whoami", "show the active oauthAccount"},
+		{"cc-switch list", "list saved accounts with details"},
+		{"cc-switch whoami", "show the active account"},
 		{"cc-switch usage [name]", "show rate-limit usage (all accounts, or named ones)"},
 		{"cc-switch help", "show this help"},
 	}
