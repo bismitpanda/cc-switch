@@ -13,7 +13,7 @@ go install github.com/bismitpanda/cc-switch@latest
 Or from a local clone:
 
 ```bash
-go build -o cc-switch .
+go build -ldflags "-X main.version=$(git rev-parse --short=7 HEAD)" -o cc-switch .
 ```
 
 Requires [Go](https://go.dev/) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`).
@@ -29,7 +29,7 @@ Requires [Go](https://go.dev/) and [Claude Code](https://docs.anthropic.com/en/d
 | `cc-switch rename [old] [new]` | Rename a saved account                               |
 | `cc-switch list`               | List saved accounts                                  |
 | `cc-switch whoami`             | Show the active account                              |
-| `cc-switch usage [name...]`    | Show rate-limit usage (all accounts, or named ones)  |
+| `cc-switch usage [name]`       | Show rate-limit usage (all accounts, or a named one) |
 | `cc-switch help`               | Show help                                            |
 
 Omit `[name]` in an interactive terminal and you'll get a prompt.

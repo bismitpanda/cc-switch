@@ -29,6 +29,7 @@ var (
 	whoamiValStyle   lipgloss.Style
 	helpTitleStyle   lipgloss.Style
 	helpCmdStyle     lipgloss.Style
+	helpArgStyle     lipgloss.Style
 )
 
 func initStyles() {
@@ -55,6 +56,7 @@ func initStyles() {
 	whoamiValStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	helpTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
 	helpCmdStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
+	helpArgStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 }
 
 func printMuted(msg string) {

@@ -5,27 +5,38 @@ import (
 	"os"
 )
 
+var version = "dev"
+
+func formatHelpCmd(cmd, args string) string {
+	out := helpCmdStyle.Render(cmd)
+	if args != "" {
+		out += " " + helpArgStyle.Render(args)
+	}
+	return out
+}
+
 func cmdHelp() {
 	initStyles()
-	fmt.Println(helpTitleStyle.Render("cc-switch — switch the active Claude Code account"))
+	fmt.Println(helpTitleStyle.Render(fmt.Sprintf("cc-switch (v. %s) — switch the active Claude Code account", version)))
 	fmt.Println()
 	fmt.Println(labelStyle.Render("Usage:"))
 	helpLines := []struct {
 		cmd  string
+		args string
 		desc string
 	}{
-		{"cc-switch save [name]", "snapshot the currently logged-in account"},
-		{"cc-switch sync", "update the active account's snapshot from live credentials"},
-		{"cc-switch use [name]", "switch to a saved account"},
-		{"cc-switch remove [name]", "delete a saved account"},
-		{"cc-switch rename [old] [new]", "rename a saved account"},
-		{"cc-switch list", "list saved accounts with details"},
-		{"cc-switch whoami", "show the active account"},
-		{"cc-switch usage [name]", "show rate-limit usage (all accounts, or named ones)"},
-		{"cc-switch help", "show this help"},
+		{"cc-switch save", "[name]", "snapshot the currently logged-in account"},
+		{"cc-switch sync", "", "update the active account's snapshot from live credentials"},
+		{"cc-switch use", "[name]", "switch to a saved account"},
+		{"cc-switch remove", "[name]", "delete a saved account"},
+		{"cc-switch rename", "[old] [new]", "rename a saved account"},
+		{"cc-switch list", "", "list saved accounts with details"},
+		{"cc-switch whoami", "", "show the active account"},
+		{"cc-switch usage", "[name]", "show rate-limit usage (all accounts, or a named one)"},
+		{"cc-switch help", "", "show this help"},
 	}
 	for _, line := range helpLines {
-		fmt.Printf("  %s  %s\n", helpCmdStyle.Render(line.cmd), mutedStyle.Render(line.desc))
+		fmt.Printf("  %s  %s\n", formatHelpCmd(line.cmd, line.args), mutedStyle.Render(line.desc))
 	}
 	fmt.Println()
 	fmt.Println(labelStyle.Render("First-time setup for multiple accounts:"))
@@ -44,7 +55,7 @@ func cmdHelp() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "Usage: cc-switch {save [name]|sync|use [name]|remove [name]|rename [old] [new]|list|whoami|usage [name...]|help}")
+	fmt.Fprintln(os.Stderr, "Usage: cc-switch {save [name]|sync|use [name]|remove [name]|rename [old] [new]|list|whoami|usage [name]|help}")
 	fmt.Fprintln(os.Stderr, "Run 'cc-switch help' for more information.")
 	os.Exit(1)
 }
@@ -79,8 +90,8 @@ func main() {
 		cmdList()
 	case "whoami":
 		cmdWhoami()
-	case "usage":
-		cmdUsage(os.Args[2:])
+	case "usage", "limit":
+		cmdUsage(arg(2))
 	case "help", "-h", "--help":
 		cmdHelp()
 	default:

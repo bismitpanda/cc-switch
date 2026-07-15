@@ -456,17 +456,16 @@ func printUnavailableAccounts(results []accountUsageResult) {
 	}
 }
 
-func cmdUsage(names []string) {
-	if len(names) == 0 {
+func cmdUsage(name string) {
+	var names []string
+	if name == "" {
 		names = listAccountNames()
 		if len(names) == 0 {
 			printMuted("(no saved accounts yet)")
 			return
 		}
 	} else {
-		for i, name := range names {
-			names[i] = requireAccountName(name)
-		}
+		names = []string{requireAccountName(name)}
 	}
 
 	results := make([]accountUsageResult, len(names))
