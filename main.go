@@ -114,7 +114,7 @@ func cmdSave(name string) {
 	}
 	cf := credFile()
 	if _, err := os.Stat(cf); os.IsNotExist(err) {
-		fatalf("No credentials file at %s yet — run 'claude' then '/login' first.", cf)
+		fatalf("No credentials file at %s yet — run 'claude auth login' first.", cf)
 	}
 
 	global, err := readJSONObject(globalFile())
@@ -183,7 +183,7 @@ func cmdUse(name string) {
 		fatalf("could not write %s: %v", cf, err)
 	}
 
-	fmt.Printf("Switched active account to '%s'. (If Claude Code is already running, exit and relaunch it.)\n", name)
+	fmt.Printf("Switched active account to '%s'\n", name)
 }
 
 func cmdList() {
@@ -224,13 +224,7 @@ func cmdWhoami() {
 }
 
 func cmdHelp() {
-	fmt.Print(`cc-switch — switch the active Claude Code account without changing config directories.
-
-Only two keys are ever read or written:
-  ~/.claude.json              oauthAccount
-  ~/.claude/.credentials.json claudeAiOauth
-
-Everything else in those files (projects, settings, MCP OAuth, etc.) is left untouched.
+	fmt.Print(`cc-switch — switch the active Claude Code account
 
 Usage:
   cc-switch save <name>   snapshot the currently logged-in account
@@ -240,12 +234,12 @@ Usage:
   cc-switch help          show this help
 
 First-time setup for multiple accounts:
-  claude                  # launch, then /login with account A
+  claude auth login          # login with account A
   cc-switch save personal
-  claude /logout
-  claude                  # /login with account B
+  claude auth logout
+  claude auth login          # login with account B
   cc-switch save work
-  cc-switch use personal  # switch without another browser login
+  cc-switch use personal     # switch without another browser login
   cc-switch use work
 `)
 }
