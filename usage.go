@@ -16,6 +16,7 @@ import (
 )
 
 type usageLimit struct {
+	Kind     string
 	Label    string
 	Percent  float64
 	ResetsAt string
@@ -36,6 +37,17 @@ var legacyUsageKeys = map[string]string{
 	"seven_day_opus":   "Weekly (Opus)",
 	"seven_day_sonnet": "Weekly (Sonnet)",
 	"seven_day_cowork": "Weekly (Cowork)",
+}
+
+func coreUsageKind(kind string) string {
+	switch kind {
+	case "session", "five_hour":
+		return "session"
+	case "weekly_all", "seven_day":
+		return "weekly"
+	default:
+		return ""
+	}
 }
 
 func parseUsageLimits(raw map[string]any) []usageLimit {
@@ -71,6 +83,7 @@ func parseLimitsArray(limits []any) []usageLimit {
 		severity, _ := m["severity"].(string)
 		active, _ := m["is_active"].(bool)
 		out = append(out, usageLimit{
+			Kind:     coreUsageKind(kind),
 			Label:    label,
 			Percent:  percent,
 			ResetsAt: resetsAt,
@@ -113,6 +126,7 @@ func parseLegacyUsageLimits(raw map[string]any) []usageLimit {
 		percent, _ := asFloat64(m["utilization"])
 		resetsAt, _ := m["resets_at"].(string)
 		out = append(out, usageLimit{
+			Kind:     coreUsageKind(k),
 			Label:    label,
 			Percent:  percent,
 			ResetsAt: resetsAt,
@@ -250,13 +264,21 @@ func printUsageLimit(limit usageLimit, labelWidth int) {
 	fmt.Println(line)
 }
 
-func printAccountUsage(name string, limits []usageLimit, active bool) {
+func printAccountUsage(name string, limits []usageLimit, active, grayed bool) {
 	initStyles()
-	header := titleStyle.Render(name)
-	if active {
-		header += " " + successStyle.Render("● active")
+	if grayed {
+		line := mutedStyle.Render(name)
+		if resetAt, ok := usableAgainResetsAt(limits); ok {
+			line += " " + mutedStyle.Render("— "+formatResetAt(resetAt))
+		}
+		fmt.Println(line)
+	} else {
+		header := titleStyle.Render(name)
+		if active {
+			header += " " + successStyle.Render("● active")
+		}
+		fmt.Println(header)
 	}
-	fmt.Println(header)
 	if len(limits) == 0 {
 		printMuted("  (no usage limits returned)")
 		return
@@ -265,6 +287,69 @@ func printAccountUsage(name string, limits []usageLimit, active bool) {
 	for _, limit := range limits {
 		printUsageLimit(limit, labelWidth)
 	}
+}
+
+func coreUsageExhausted(limits []usageLimit) bool {
+	for _, limit := range limits {
+		if (limit.Kind == "session" || limit.Kind == "weekly") && limit.Percent >= 100 {
+			return true
+		}
+	}
+	return false
+}
+
+func parseResetsAt(resetsAt string) (time.Time, bool) {
+	if resetsAt == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339Nano, resetsAt)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339, resetsAt)
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	return t, true
+}
+
+func usableAgainAt(limits []usageLimit) (time.Time, bool) {
+	var latest time.Time
+	found := false
+	for _, limit := range limits {
+		if (limit.Kind != "session" && limit.Kind != "weekly") || limit.Percent < 100 {
+			continue
+		}
+		t, ok := parseResetsAt(limit.ResetsAt)
+		if !ok {
+			continue
+		}
+		if !found || t.After(latest) {
+			latest = t
+			found = true
+		}
+	}
+	return latest, found
+}
+
+func usableAgainResetsAt(limits []usageLimit) (string, bool) {
+	var best string
+	var latest time.Time
+	found := false
+	for _, limit := range limits {
+		if (limit.Kind != "session" && limit.Kind != "weekly") || limit.Percent < 100 {
+			continue
+		}
+		t, ok := parseResetsAt(limit.ResetsAt)
+		if !ok {
+			continue
+		}
+		if !found || t.After(latest) {
+			latest = t
+			best = limit.ResetsAt
+			found = true
+		}
+	}
+	return best, found
 }
 
 func fetchUsage(token string) ([]usageLimit, error) {
@@ -302,12 +387,85 @@ type accountUsageResult struct {
 	err    error
 }
 
+func sortUnavailableByReset(results []accountUsageResult) {
+	sort.SliceStable(results, func(i, j int) bool {
+		a, b := results[i], results[j]
+		if a.err != nil && b.err == nil {
+			return false
+		}
+		if a.err == nil && b.err != nil {
+			return true
+		}
+		ti, oki := usableAgainAt(a.limits)
+		tj, okj := usableAgainAt(b.limits)
+		if oki != okj {
+			return oki
+		}
+		if oki && !ti.Equal(tj) {
+			return ti.Before(tj)
+		}
+		return a.name < b.name
+	})
+}
+
+func coreLimitPercent(limits []usageLimit, kind string) (float64, bool) {
+	for _, limit := range limits {
+		if limit.Kind == kind {
+			return limit.Percent, true
+		}
+	}
+	return 0, false
+}
+
+func sortUsableByUsage(results []accountUsageResult) {
+	sort.SliceStable(results, func(i, j int) bool {
+		a, b := results[i], results[j]
+		sa, soa := coreLimitPercent(a.limits, "session")
+		sb, sob := coreLimitPercent(b.limits, "session")
+		if soa != sob {
+			return soa
+		}
+		if soa && sa != sb {
+			return sa < sb
+		}
+		wa, woa := coreLimitPercent(a.limits, "weekly")
+		wb, wob := coreLimitPercent(b.limits, "weekly")
+		if woa != wob {
+			return woa
+		}
+		if woa && wa != wb {
+			return wa < wb
+		}
+		return a.name < b.name
+	})
+}
+
+func printUnavailableAccounts(results []accountUsageResult) {
+	initStyles()
+	sortUnavailableByReset(results)
+	for i, res := range results {
+		if i > 0 {
+			fmt.Println()
+		}
+		if res.err != nil {
+			fmt.Println(mutedStyle.Render(res.name))
+			printMuted("  " + res.err.Error())
+			continue
+		}
+		printAccountUsage(res.name, res.limits, false, true)
+	}
+}
+
 func cmdUsage(names []string) {
 	if len(names) == 0 {
 		names = listAccountNames()
 		if len(names) == 0 {
 			printMuted("(no saved accounts yet)")
 			return
+		}
+	} else {
+		for i, name := range names {
+			names[i] = requireAccountName(name)
 		}
 	}
 
@@ -341,14 +499,42 @@ func cmdUsage(names []string) {
 
 	active, _ := activeOAuthAccount()
 
-	for i, res := range results {
-		if i > 0 {
-			fmt.Println()
-		}
-		if res.err != nil {
-			printError(res.name, res.err.Error())
+	var activeRes *accountUsageResult
+	var usable, unavailable []accountUsageResult
+	for i := range results {
+		res := results[i]
+		if isActiveSavedAccount(res.name, active) {
+			activeRes = &results[i]
 			continue
 		}
-		printAccountUsage(res.name, res.limits, isActiveSavedAccount(res.name, active))
+		if res.err != nil || coreUsageExhausted(res.limits) {
+			unavailable = append(unavailable, res)
+			continue
+		}
+		usable = append(usable, res)
+	}
+
+	printed := false
+	if activeRes != nil {
+		if activeRes.err != nil {
+			printError(activeRes.name, activeRes.err.Error())
+		} else {
+			printAccountUsage(activeRes.name, activeRes.limits, true, false)
+		}
+		printed = true
+	}
+	sortUsableByUsage(usable)
+	for _, res := range usable {
+		if printed {
+			fmt.Println()
+		}
+		printAccountUsage(res.name, res.limits, false, false)
+		printed = true
+	}
+	if len(unavailable) > 0 {
+		if printed {
+			fmt.Println()
+		}
+		printUnavailableAccounts(unavailable)
 	}
 }

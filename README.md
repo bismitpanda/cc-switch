@@ -20,14 +20,16 @@ Requires [Go](https://go.dev/) and [Claude Code](https://docs.anthropic.com/en/d
 
 ## Commands
 
-| Command                     | Description                                         |
-| --------------------------- | --------------------------------------------------- |
-| `cc-switch save [name]`     | Snapshot the currently logged-in account            |
-| `cc-switch use [name]`      | Switch to a saved account                           |
-| `cc-switch list`            | List saved accounts                                 |
-| `cc-switch whoami`          | Show the active account                             |
-| `cc-switch usage [name...]` | Show rate-limit usage (all accounts, or named ones) |
-| `cc-switch help`            | Show help                                           |
+| Command                       | Description                                         |
+| ----------------------------- | --------------------------------------------------- |
+| `cc-switch save [name]`       | Snapshot the currently logged-in account            |
+| `cc-switch use [name]`        | Switch to a saved account                           |
+| `cc-switch remove [name]`     | Delete a saved account                              |
+| `cc-switch rename [old] [new]`| Rename a saved account                              |
+| `cc-switch list`              | List saved accounts                                 |
+| `cc-switch whoami`            | Show the active account                             |
+| `cc-switch usage [name...]`   | Show rate-limit usage (all accounts, or named ones) |
+| `cc-switch help`              | Show help                                           |
 
 Omit `[name]` in an interactive terminal and you'll get a prompt.
 

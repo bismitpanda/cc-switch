@@ -111,12 +111,28 @@ func ensureSetup() {
 	}
 }
 
+func accountSnapPath(name string) string {
+	return filepath.Join(storeDir(), requireAccountName(name)+".json")
+}
+
+func resolveAccountName(name string, usage string) string {
+	if name == "" {
+		if !isInteractive() {
+			fatalf("Usage: %s", usage)
+		}
+		return promptSelectAccount()
+	}
+	return requireAccountName(name)
+}
+
 func cmdSave(name string) {
 	if name == "" {
 		if !isInteractive() {
 			fatalf("Usage: cc-switch save <name>")
 		}
 		name = promptSaveName()
+	} else {
+		name = requireAccountName(name)
 	}
 	cf := credFile()
 	if _, err := os.Stat(cf); os.IsNotExist(err) {
@@ -142,7 +158,7 @@ func cmdSave(name string) {
 		"claudeAiOauth": claudeAiOauth,
 	}
 
-	dest := filepath.Join(storeDir(), name+".json")
+	dest := accountSnapPath(name)
 	if err := writeJSONObject(dest, snap, 0600); err != nil {
 		fatalf("could not write %s: %v", dest, err)
 	}
@@ -150,13 +166,8 @@ func cmdSave(name string) {
 }
 
 func cmdUse(name string) {
-	if name == "" {
-		if !isInteractive() {
-			fatalf("Usage: cc-switch use <name>")
-		}
-		name = promptUseAccount()
-	}
-	snapPath := filepath.Join(storeDir(), name+".json")
+	name = resolveAccountName(name, "cc-switch use <name>")
+	snapPath := accountSnapPath(name)
 	if _, err := os.Stat(snapPath); os.IsNotExist(err) {
 		fatalf("No saved account called '%s'. Run: cc-switch save %s (while logged into it)", name, name)
 	}
@@ -195,6 +206,56 @@ func cmdUse(name string) {
 	printSuccess(fmt.Sprintf("Switched active account to %s", accountStyle.Render(name)))
 }
 
+func cmdRemove(name string) {
+	name = resolveAccountName(name, "cc-switch remove <name>")
+	snapPath := accountSnapPath(name)
+	if err := os.Remove(snapPath); err != nil {
+		if os.IsNotExist(err) {
+			fatalf("No saved account called '%s'", name)
+		}
+		fatalf("could not remove %s: %v", name, err)
+	}
+	printSuccess(fmt.Sprintf("Removed saved account %s.", accountStyle.Render(name)))
+}
+
+func cmdRename(oldName, newName string) {
+	if oldName == "" {
+		if !isInteractive() {
+			fatalf("Usage: cc-switch rename <old> <new>")
+		}
+		oldName = promptSelectAccount()
+	} else {
+		oldName = requireAccountName(oldName)
+	}
+	if newName == "" {
+		if !isInteractive() {
+			fatalf("Usage: cc-switch rename <old> <new>")
+		}
+		newName = promptAccountName("work")
+	} else {
+		newName = requireAccountName(newName)
+	}
+	if oldName == newName {
+		fatalf("old and new names are the same")
+	}
+
+	oldPath := accountSnapPath(oldName)
+	newPath := accountSnapPath(newName)
+	if _, err := os.Stat(oldPath); os.IsNotExist(err) {
+		fatalf("No saved account called '%s'", oldName)
+	}
+	if _, err := os.Stat(newPath); err == nil {
+		fatalf("An account named '%s' already exists", newName)
+	} else if !os.IsNotExist(err) {
+		fatalf("could not check %s: %v", newName, err)
+	}
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		fatalf("could not rename %s to %s: %v", oldName, newName, err)
+	}
+	printSuccess(fmt.Sprintf("Renamed %s → %s.", accountStyle.Render(oldName), accountStyle.Render(newName)))
+}
+
 func oauthFieldPlain(oauth map[string]any, key string) string {
 	value, ok := whoamiFieldValue(oauth[key])
 	if !ok {
@@ -204,7 +265,10 @@ func oauthFieldPlain(oauth map[string]any, key string) string {
 }
 
 func savedOAuthAccount(name string) (map[string]any, bool) {
-	snap, err := readJSONObject(filepath.Join(storeDir(), name+".json"))
+	if err := validateAccountName(name); err != nil {
+		return nil, false
+	}
+	snap, err := readJSONObject(accountSnapPath(name))
 	if err != nil {
 		return nil, false
 	}
@@ -221,23 +285,11 @@ func savedOAuthAccount(name string) (map[string]any, bool) {
 
 func cmdList() {
 	initStyles()
-	entries, err := os.ReadDir(storeDir())
-	if err != nil {
-		printMuted("(no saved accounts yet)")
-		return
-	}
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		names = append(names, strings.TrimSuffix(e.Name(), ".json"))
-	}
+	names := listAccountNames()
 	if len(names) == 0 {
 		printMuted("(no saved accounts yet)")
 		return
 	}
-	sort.Strings(names)
 
 	active, _ := activeOAuthAccount()
 	activeRows := make([]bool, len(names))
@@ -287,14 +339,21 @@ func listAccountNames() []string {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
-		names = append(names, strings.TrimSuffix(e.Name(), ".json"))
+		name := strings.TrimSuffix(e.Name(), ".json")
+		if err := validateAccountName(name); err != nil {
+			continue
+		}
+		names = append(names, name)
 	}
 	sort.Strings(names)
 	return names
 }
 
 func accountAccessToken(name string) (string, error) {
-	snapPath := filepath.Join(storeDir(), name+".json")
+	if err := validateAccountName(name); err != nil {
+		return "", err
+	}
+	snapPath := accountSnapPath(name)
 	snap, err := readJSONObject(snapPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -346,7 +405,10 @@ func isActiveSavedAccount(name string, active any) bool {
 	if active == nil {
 		return false
 	}
-	snap, err := readJSONObject(filepath.Join(storeDir(), name+".json"))
+	if err := validateAccountName(name); err != nil {
+		return false
+	}
+	snap, err := readJSONObject(accountSnapPath(name))
 	if err != nil {
 		return false
 	}

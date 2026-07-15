@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -11,6 +12,8 @@ import (
 	"github.com/charmbracelet/huh"
 	"golang.org/x/term"
 )
+
+var accountNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 func isInteractive() bool {
 	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
@@ -108,20 +111,28 @@ func validateAccountName(name string) error {
 	if name == "" {
 		return fmt.Errorf("name cannot be empty")
 	}
-	if strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
-		return fmt.Errorf("name cannot contain path separators")
+	if !accountNamePattern.MatchString(name) {
+		return fmt.Errorf("name must be letters, digits, hyphens, or underscores")
 	}
 	return nil
 }
 
-func promptSaveName() string {
+func requireAccountName(name string) string {
+	name = strings.TrimSpace(name)
+	if err := validateAccountName(name); err != nil {
+		fatalf("%v", err)
+	}
+	return name
+}
+
+func promptAccountName(placeholder string) string {
 	var name string
 	km := promptKeyMap()
 	form := huh.NewForm(
 		huh.NewGroup(
 			withCancelHelp(
 				huh.NewInput().
-					Placeholder("personal").
+					Placeholder(placeholder).
 					Value(&name).
 					Validate(validateAccountName),
 				km.Quit,
@@ -132,7 +143,11 @@ func promptSaveName() string {
 	return strings.TrimSpace(name)
 }
 
-func promptUseAccount() string {
+func promptSaveName() string {
+	return promptAccountName("personal")
+}
+
+func promptSelectAccount() string {
 	names := listAccountNames()
 	if len(names) == 0 {
 		fatalf("No saved accounts yet. Run: cc-switch save <name>")
