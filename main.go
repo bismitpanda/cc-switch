@@ -8,13 +8,82 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
+	"github.com/muesli/termenv"
+	"golang.org/x/term"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
+
+var (
+	stylesReady bool
+
+	titleStyle      lipgloss.Style
+	successStyle    lipgloss.Style
+	mutedStyle      lipgloss.Style
+	errorStyle      lipgloss.Style
+	accountStyle    lipgloss.Style
+	labelStyle      lipgloss.Style
+	barFillStyle    lipgloss.Style
+	barEmptyStyle   lipgloss.Style
+	criticalBarStyle lipgloss.Style
+	activeBarStyle  lipgloss.Style
+	whoamiKeyStyle  lipgloss.Style
+	whoamiValStyle  lipgloss.Style
+	helpTitleStyle  lipgloss.Style
+	helpCmdStyle    lipgloss.Style
+)
+
+func initStyles() {
+	if stylesReady {
+		return
+	}
+	stylesReady = true
+
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		lipgloss.SetColorProfile(termenv.Ascii)
+	}
+
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	mutedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	accountStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
+	labelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	barFillStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	barEmptyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	criticalBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	activeBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	whoamiKeyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	whoamiValStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	helpTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
+	helpCmdStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
+}
+
+func printMuted(msg string) {
+	initStyles()
+	fmt.Println(mutedStyle.Render(msg))
+}
+
+func printSuccess(msg string) {
+	initStyles()
+	fmt.Println(successStyle.Render(msg))
+}
+
+func printError(name, msg string) {
+	initStyles()
+	if name != "" {
+		fmt.Fprintf(os.Stderr, "%s: %s\n", accountStyle.Render(name), errorStyle.Render(msg))
+		return
+	}
+	fmt.Fprintln(os.Stderr, errorStyle.Render(msg))
+}
 
 func credFile() string {
 	dir := os.Getenv("CLAUDE_CONFIG_DIR")
@@ -117,7 +186,10 @@ func ensureSetup() {
 
 func cmdSave(name string) {
 	if name == "" {
-		fatalf("Usage: cc-switch save <name>")
+		if !isInteractive() {
+			fatalf("Usage: cc-switch save <name>")
+		}
+		name = promptSaveName()
 	}
 	cf := credFile()
 	if _, err := os.Stat(cf); os.IsNotExist(err) {
@@ -147,12 +219,15 @@ func cmdSave(name string) {
 	if err := writeJSONObject(dest, snap, 0600); err != nil {
 		fatalf("could not write %s: %v", dest, err)
 	}
-	fmt.Printf("Saved the currently logged-in account as '%s'.\n", name)
+	printSuccess(fmt.Sprintf("Saved the currently logged-in account as %s.", accountStyle.Render(name)))
 }
 
 func cmdUse(name string) {
 	if name == "" {
-		fatalf("Usage: cc-switch use <name>")
+		if !isInteractive() {
+			fatalf("Usage: cc-switch use <name>")
+		}
+		name = promptUseAccount()
 	}
 	snapPath := filepath.Join(storeDir(), name+".json")
 	if _, err := os.Stat(snapPath); os.IsNotExist(err) {
@@ -190,13 +265,14 @@ func cmdUse(name string) {
 		fatalf("could not write %s: %v", cf, err)
 	}
 
-	fmt.Printf("Switched active account to '%s'\n", name)
+	printSuccess(fmt.Sprintf("Switched active account to %s", accountStyle.Render(name)))
 }
 
 func cmdList() {
+	initStyles()
 	entries, err := os.ReadDir(storeDir())
 	if err != nil {
-		fmt.Println("(no saved accounts yet)")
+		printMuted("(no saved accounts yet)")
 		return
 	}
 	var names []string
@@ -207,13 +283,27 @@ func cmdList() {
 		names = append(names, strings.TrimSuffix(e.Name(), ".json"))
 	}
 	if len(names) == 0 {
-		fmt.Println("(no saved accounts yet)")
+		printMuted("(no saved accounts yet)")
 		return
 	}
 	sort.Strings(names)
-	for _, n := range names {
-		fmt.Println(n)
+
+	rows := make([][]string, len(names))
+	for i, n := range names {
+		rows[i] = []string{n}
 	}
+	t := table.New().
+		Border(lipgloss.NormalBorder()).
+		BorderStyle(mutedStyle).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return labelStyle.Bold(true)
+			}
+			return accountStyle
+		}).
+		Headers("Saved account").
+		Rows(rows...)
+	fmt.Println(t)
 }
 
 type usageLimit struct {
@@ -395,27 +485,76 @@ func formatDuration(d time.Duration) string {
 	return strings.Join(parts, " ")
 }
 
-func printUsageLimit(limit usageLimit) {
-	line := fmt.Sprintf("  %s: %.0f%% used", limit.Label, limit.Percent)
-	if limit.Severity == "critical" {
-		line += " (critical)"
-	} else if limit.Active {
-		line += " (active)"
+const (
+	usageBarWidth  = 20
+	usagePctWidth  = 4
+	usageMinLabelW = 16
+)
+
+func usageBar(percent float64, severity string, active bool) string {
+	filled := int(percent / 100 * usageBarWidth)
+	if filled > usageBarWidth {
+		filled = usageBarWidth
 	}
+	if filled < 0 {
+		filled = 0
+	}
+	empty := usageBarWidth - filled
+
+	fillStyle := barFillStyle
+	switch {
+	case severity == "critical":
+		fillStyle = criticalBarStyle
+	case active:
+		fillStyle = activeBarStyle
+	}
+
+	return fillStyle.Render(strings.Repeat("█", filled)) +
+		barEmptyStyle.Render(strings.Repeat("░", empty))
+}
+
+func usageLabelWidth(limits []usageLimit) int {
+	width := usageMinLabelW
+	for _, limit := range limits {
+		if w := lipgloss.Width(limit.Label); w > width {
+			width = w
+		}
+	}
+	return width
+}
+
+func printUsageLimit(limit usageLimit, labelWidth int) {
+	initStyles()
+	bar := usageBar(limit.Percent, limit.Severity, limit.Active)
+	pct := fmt.Sprintf("%3.0f%%", limit.Percent)
+	line := lipgloss.JoinHorizontal(lipgloss.Top,
+		"  ",
+		labelStyle.Width(labelWidth).Render(limit.Label),
+		"  ",
+		lipgloss.NewStyle().Width(usageBarWidth).Render(bar),
+		" ",
+		mutedStyle.Width(usagePctWidth).Align(lipgloss.Right).Render(pct),
+	)
 	if limit.ResetsAt != "" {
-		line += " — " + formatResetAt(limit.ResetsAt)
+		line += " " + mutedStyle.Render("— "+formatResetAt(limit.ResetsAt))
 	}
 	fmt.Println(line)
 }
 
-func printAccountUsage(name string, limits []usageLimit) {
-	fmt.Printf("%s:\n", name)
+func printAccountUsage(name string, limits []usageLimit, active bool) {
+	initStyles()
+	header := titleStyle.Render(name)
+	if active {
+		header += " " + successStyle.Render("● active")
+	}
+	fmt.Println(header)
 	if len(limits) == 0 {
-		fmt.Println("  (no usage limits returned)")
+		printMuted("  (no usage limits returned)")
 		return
 	}
+	labelWidth := usageLabelWidth(limits)
 	for _, limit := range limits {
-		printUsageLimit(limit)
+		printUsageLimit(limit, labelWidth)
 	}
 }
 
@@ -463,6 +602,42 @@ func accountAccessToken(name string) (string, error) {
 	return token, nil
 }
 
+func activeOAuthAccount() (any, error) {
+	global, err := readJSONObject(globalFile())
+	if err != nil {
+		return nil, err
+	}
+	oauthVal, ok := global["oauthAccount"]
+	return orDefault(oauthVal, ok, nil), nil
+}
+
+func jsonEqual(a, b any) bool {
+	da, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	db, err := json.Marshal(b)
+	if err != nil {
+		return false
+	}
+	return string(da) == string(db)
+}
+
+func isActiveSavedAccount(name string, active any) bool {
+	if active == nil {
+		return false
+	}
+	snap, err := readJSONObject(filepath.Join(storeDir(), name+".json"))
+	if err != nil {
+		return false
+	}
+	saved, ok := snap["oauthAccount"]
+	if !ok || saved == nil {
+		return false
+	}
+	return jsonEqual(active, saved)
+}
+
 func fetchUsage(token string) ([]usageLimit, error) {
 	req, err := http.NewRequest(http.MethodGet, "https://api.anthropic.com/api/oauth/usage", nil)
 	if err != nil {
@@ -502,7 +677,7 @@ func cmdUsage(names []string) {
 	if len(names) == 0 {
 		names = listAccountNames()
 		if len(names) == 0 {
-			fmt.Println("(no saved accounts yet)")
+			printMuted("(no saved accounts yet)")
 			return
 		}
 	}
@@ -511,71 +686,135 @@ func cmdUsage(names []string) {
 	var wg sync.WaitGroup
 	wg.Add(len(names))
 
-	for i, name := range names {
-		go func(i int, name string) {
-			defer wg.Done()
-			token, err := accountAccessToken(name)
-			if err != nil {
-				results[i] = accountUsageResult{name: name, err: err}
-				return
-			}
-			limits, err := fetchUsage(token)
-			results[i] = accountUsageResult{name: name, limits: limits, err: err}
-		}(i, name)
+	fetch := func() {
+		for i, name := range names {
+			go func(i int, name string) {
+				defer wg.Done()
+				token, err := accountAccessToken(name)
+				if err != nil {
+					results[i] = accountUsageResult{name: name, err: err}
+					return
+				}
+				limits, err := fetchUsage(token)
+				results[i] = accountUsageResult{name: name, limits: limits, err: err}
+			}(i, name)
+		}
+		wg.Wait()
 	}
 
-	wg.Wait()
+	label := "Fetching usage..."
+	if len(names) == 1 {
+		label = fmt.Sprintf("Fetching usage for %s...", names[0])
+	} else {
+		label = fmt.Sprintf("Fetching usage for %d accounts...", len(names))
+	}
+	runWithLoader(label, fetch)
+
+	active, _ := activeOAuthAccount()
 
 	for i, res := range results {
 		if i > 0 {
 			fmt.Println()
 		}
 		if res.err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", res.name, res.err)
+			printError(res.name, res.err.Error())
 			continue
 		}
-		printAccountUsage(res.name, res.limits)
+		printAccountUsage(res.name, res.limits, isActiveSavedAccount(res.name, active))
+	}
+}
+
+func formatWhoamiValue(v any) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case float64:
+		if val == float64(int64(val)) {
+			return strconv.FormatInt(int64(val), 10)
+		}
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(val)
+	case nil:
+		return mutedStyle.Render("(none)")
+	default:
+		data, err := json.MarshalIndent(val, "", "  ")
+		if err != nil {
+			return fmt.Sprint(val)
+		}
+		return string(data)
+	}
+}
+
+func printWhoami(oauth any) {
+	initStyles()
+	if oauth == nil {
+		printMuted("(no active account)")
+		return
+	}
+	m, ok := oauth.(map[string]any)
+	if !ok || len(m) == 0 {
+		printMuted("(no active account)")
+		return
+	}
+
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	fmt.Println(titleStyle.Render("Active account"))
+	for _, k := range keys {
+		fmt.Printf("  %s %s\n", whoamiKeyStyle.Render(k+":"), whoamiValStyle.Render(formatWhoamiValue(m[k])))
 	}
 }
 
 func cmdWhoami() {
-	global, err := readJSONObject(globalFile())
+	oauth, err := activeOAuthAccount()
 	if err != nil {
 		fatalf("%v", err)
 	}
-	oauthVal, ok := global["oauthAccount"]
-	oauth := orDefault(oauthVal, ok, "none")
-	data, err := json.MarshalIndent(oauth, "", "  ")
-	if err != nil {
-		fatalf("%v", err)
-	}
-	fmt.Println(string(data))
+	printWhoami(oauth)
 }
 
 func cmdHelp() {
-	fmt.Print(`cc-switch — switch the active Claude Code account
-
-Usage:
-  cc-switch save <name>   snapshot the currently logged-in account
-  cc-switch use <name>    switch to a saved account
-  cc-switch list          list saved account names
-  cc-switch whoami        show the active oauthAccount
-  cc-switch usage [name]  show rate-limit usage (all accounts, or named ones)
-  cc-switch help          show this help
-
-First-time setup for multiple accounts:
-  claude auth login          # login with account A
-  cc-switch save personal
-  claude auth logout
-  claude auth login          # login with account B
-  cc-switch save work
-  cc-switch use personal     # switch without another browser login
-  cc-switch use work
-`)
+	initStyles()
+	fmt.Println(helpTitleStyle.Render("cc-switch — switch the active Claude Code account"))
+	fmt.Println()
+	fmt.Println(labelStyle.Render("Usage:"))
+	helpLines := []struct {
+		cmd  string
+		desc string
+	}{
+		{"cc-switch save [name]", "snapshot the currently logged-in account"},
+		{"cc-switch use [name]", "switch to a saved account"},
+		{"cc-switch list", "list saved account names"},
+		{"cc-switch whoami", "show the active oauthAccount"},
+		{"cc-switch usage [name]", "show rate-limit usage (all accounts, or named ones)"},
+		{"cc-switch help", "show this help"},
+	}
+	for _, line := range helpLines {
+		fmt.Printf("  %s  %s\n", helpCmdStyle.Render(line.cmd), mutedStyle.Render(line.desc))
+	}
+	fmt.Println()
+	fmt.Println(labelStyle.Render("First-time setup for multiple accounts:"))
+	setupLines := []string{
+		"claude auth login          # login with account A",
+		"cc-switch save personal",
+		"claude auth logout",
+		"claude auth login          # login with account B",
+		"cc-switch save work",
+		"cc-switch use personal     # switch without another browser login",
+		"cc-switch use work",
+	}
+	for _, line := range setupLines {
+		fmt.Println("  " + mutedStyle.Render(line))
+	}
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "Usage: cc-switch {save <name>|use <name>|list|whoami|usage [name...]|help}")
+	fmt.Fprintln(os.Stderr, "Usage: cc-switch {save [name]|use [name]|list|whoami|usage [name...]|help}")
 	fmt.Fprintln(os.Stderr, "Run 'cc-switch help' for more information.")
 	os.Exit(1)
 }
@@ -588,6 +827,7 @@ func arg(i int) string {
 }
 
 func main() {
+	initStyles()
 	ensureSetup()
 
 	if len(os.Args) < 2 {
