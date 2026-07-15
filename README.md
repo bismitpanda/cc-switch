@@ -20,16 +20,17 @@ Requires [Go](https://go.dev/) and [Claude Code](https://docs.anthropic.com/en/d
 
 ## Commands
 
-| Command                       | Description                                         |
-| ----------------------------- | --------------------------------------------------- |
-| `cc-switch save [name]`       | Snapshot the currently logged-in account            |
-| `cc-switch use [name]`        | Switch to a saved account                           |
-| `cc-switch remove [name]`     | Delete a saved account                              |
-| `cc-switch rename [old] [new]`| Rename a saved account                              |
-| `cc-switch list`              | List saved accounts                                 |
-| `cc-switch whoami`            | Show the active account                             |
-| `cc-switch usage [name...]`   | Show rate-limit usage (all accounts, or named ones) |
-| `cc-switch help`              | Show help                                           |
+| Command                        | Description                                          |
+| ------------------------------ | ---------------------------------------------------- |
+| `cc-switch save [name]`        | Snapshot the currently logged-in account             |
+| `cc-switch sync`               | Update the active account's snapshot from live creds |
+| `cc-switch use [name]`         | Switch to a saved account                            |
+| `cc-switch remove [name]`      | Delete a saved account                               |
+| `cc-switch rename [old] [new]` | Rename a saved account                               |
+| `cc-switch list`               | List saved accounts                                  |
+| `cc-switch whoami`             | Show the active account                              |
+| `cc-switch usage [name...]`    | Show rate-limit usage (all accounts, or named ones)  |
+| `cc-switch help`               | Show help                                            |
 
 Omit `[name]` in an interactive terminal and you'll get a prompt.
 
@@ -51,6 +52,8 @@ cc-switch use work
 
 Each save stores `oauthAccount` (from `~/.claude.json`) and `claudeAiOauth` (from `~/.claude/.credentials.json`, or `$CLAUDE_CONFIG_DIR/.credentials.json` if set) as `~/.cc-accounts/<name>.json`.
 
-`use` writes those fields back into the active Claude Code config files.
+`sync` writes the current live credentials back into the active account's snapshot (errors if the active account isn't saved yet).
+
+`use` syncs the outgoing account's snapshot first (when it matches a saved account), then writes the target snapshot into the active Claude Code config files.
 
 Account snapshots are stored with mode `0600`; the store directory is `0700`.

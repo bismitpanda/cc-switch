@@ -125,6 +125,64 @@ func resolveAccountName(name string, usage string) string {
 	return requireAccountName(name)
 }
 
+func liveCredentials() (oauth any, claudeAiOauth any, err error) {
+	cf := credFile()
+	if _, err := os.Stat(cf); os.IsNotExist(err) {
+		return nil, nil, fmt.Errorf("no credentials file at %s yet — run 'claude auth login' first", cf)
+	}
+
+	global, err := readJSONObject(globalFile())
+	if err != nil {
+		return nil, nil, err
+	}
+	oauthVal, ok := global["oauthAccount"]
+	oauth = orDefault(oauthVal, ok, map[string]any{})
+
+	cred, err := readJSONObject(cf)
+	if err != nil {
+		return nil, nil, err
+	}
+	credVal, ok := cred["claudeAiOauth"]
+	claudeAiOauth = orDefault(credVal, ok, map[string]any{})
+	return oauth, claudeAiOauth, nil
+}
+
+func writeAccountSnapshot(name string, oauth, claudeAiOauth any) error {
+	snap := map[string]any{
+		"oauthAccount":  oauth,
+		"claudeAiOauth": claudeAiOauth,
+	}
+	return writeJSONObject(accountSnapPath(name), snap, 0600)
+}
+
+func activeSavedAccountName() (string, bool) {
+	active, err := activeOAuthAccount()
+	if err != nil || active == nil {
+		return "", false
+	}
+	for _, name := range listAccountNames() {
+		if isActiveSavedAccount(name, active) {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func syncActiveSnapshot() (string, error) {
+	name, ok := activeSavedAccountName()
+	if !ok {
+		return "", fmt.Errorf("active account is not saved — run: cc-switch save <name>")
+	}
+	oauth, claudeAiOauth, err := liveCredentials()
+	if err != nil {
+		return "", err
+	}
+	if err := writeAccountSnapshot(name, oauth, claudeAiOauth); err != nil {
+		return "", fmt.Errorf("could not write %s: %w", accountSnapPath(name), err)
+	}
+	return name, nil
+}
+
 func cmdSave(name string) {
 	if name == "" {
 		if !isInteractive() {
@@ -134,35 +192,23 @@ func cmdSave(name string) {
 	} else {
 		name = requireAccountName(name)
 	}
-	cf := credFile()
-	if _, err := os.Stat(cf); os.IsNotExist(err) {
-		fatalf("No credentials file at %s yet — run 'claude auth login' first.", cf)
-	}
 
-	global, err := readJSONObject(globalFile())
+	oauth, claudeAiOauth, err := liveCredentials()
 	if err != nil {
 		fatalf("%v", err)
 	}
-	oauthVal, ok := global["oauthAccount"]
-	oauth := orDefault(oauthVal, ok, map[string]any{})
-
-	cred, err := readJSONObject(cf)
-	if err != nil {
-		fatalf("%v", err)
-	}
-	credVal, ok := cred["claudeAiOauth"]
-	claudeAiOauth := orDefault(credVal, ok, map[string]any{})
-
-	snap := map[string]any{
-		"oauthAccount":  oauth,
-		"claudeAiOauth": claudeAiOauth,
-	}
-
-	dest := accountSnapPath(name)
-	if err := writeJSONObject(dest, snap, 0600); err != nil {
-		fatalf("could not write %s: %v", dest, err)
+	if err := writeAccountSnapshot(name, oauth, claudeAiOauth); err != nil {
+		fatalf("could not write %s: %v", accountSnapPath(name), err)
 	}
 	printSuccess(fmt.Sprintf("Saved the currently logged-in account as %s.", accountStyle.Render(name)))
+}
+
+func cmdSync() {
+	name, err := syncActiveSnapshot()
+	if err != nil {
+		fatalf("%v", err)
+	}
+	printSuccess(fmt.Sprintf("Synced live credentials into %s.", accountStyle.Render(name)))
 }
 
 func cmdUse(name string) {
@@ -171,6 +217,13 @@ func cmdUse(name string) {
 	if _, err := os.Stat(snapPath); os.IsNotExist(err) {
 		fatalf("No saved account called '%s'. Run: cc-switch save %s (while logged into it)", name, name)
 	}
+
+	if current, ok := activeSavedAccountName(); ok && current != name {
+		if _, err := syncActiveSnapshot(); err != nil {
+			fatalf("%v", err)
+		}
+	}
+
 	snap, err := readJSONObject(snapPath)
 	if err != nil {
 		fatalf("%v", err)

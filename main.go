@@ -15,6 +15,7 @@ func cmdHelp() {
 		desc string
 	}{
 		{"cc-switch save [name]", "snapshot the currently logged-in account"},
+		{"cc-switch sync", "update the active account's snapshot from live credentials"},
 		{"cc-switch use [name]", "switch to a saved account"},
 		{"cc-switch remove [name]", "delete a saved account"},
 		{"cc-switch rename [old] [new]", "rename a saved account"},
@@ -43,7 +44,7 @@ func cmdHelp() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "Usage: cc-switch {save [name]|use [name]|remove [name]|rename [old] [new]|list|whoami|usage [name...]|help}")
+	fmt.Fprintln(os.Stderr, "Usage: cc-switch {save [name]|sync|use [name]|remove [name]|rename [old] [new]|list|whoami|usage [name...]|help}")
 	fmt.Fprintln(os.Stderr, "Run 'cc-switch help' for more information.")
 	os.Exit(1)
 }
@@ -66,6 +67,8 @@ func main() {
 	switch os.Args[1] {
 	case "save":
 		cmdSave(arg(2))
+	case "sync":
+		cmdSync()
 	case "use":
 		cmdUse(arg(2))
 	case "remove", "rm":
