@@ -402,37 +402,6 @@ func listAccountNames() []string {
 	return names
 }
 
-func accountAccessToken(name string) (string, error) {
-	if err := validateAccountName(name); err != nil {
-		return "", err
-	}
-	snapPath := accountSnapPath(name)
-	snap, err := readJSONObject(snapPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("no saved account called '%s'", name)
-		}
-		return "", err
-	}
-	oauthVal, ok := snap["claudeAiOauth"]
-	if !ok || oauthVal == nil {
-		return "", fmt.Errorf("account '%s' has no claudeAiOauth credentials", name)
-	}
-	oauth, ok := oauthVal.(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("account '%s' has invalid claudeAiOauth credentials", name)
-	}
-	tokenVal, ok := oauth["accessToken"]
-	if !ok || tokenVal == nil {
-		return "", fmt.Errorf("account '%s' has no access token", name)
-	}
-	token, ok := tokenVal.(string)
-	if !ok || token == "" {
-		return "", fmt.Errorf("account '%s' has no access token", name)
-	}
-	return token, nil
-}
-
 func activeOAuthAccount() (any, error) {
 	global, err := readJSONObject(globalFile())
 	if err != nil {

@@ -352,33 +352,53 @@ func usableAgainResetsAt(limits []usageLimit) (string, bool) {
 	return best, found
 }
 
-func fetchUsage(token string) ([]usageLimit, error) {
+func fetchUsage(token string) ([]usageLimit, int, error) {
 	req, err := http.NewRequest(http.MethodGet, "https://api.anthropic.com/api/oauth/usage", nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, resp.StatusCode, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("usage API returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return nil, resp.StatusCode, fmt.Errorf("usage API returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 
 	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("parsing usage response: %w", err)
+		return nil, resp.StatusCode, fmt.Errorf("parsing usage response: %w", err)
 	}
-	return parseUsageLimits(raw), nil
+	return parseUsageLimits(raw), resp.StatusCode, nil
+}
+
+func fetchAccountUsage(name string) ([]usageLimit, error) {
+	token, err := ensureAccountAccessToken(name)
+	if err != nil {
+		return nil, err
+	}
+	limits, status, err := fetchUsage(token)
+	if err == nil {
+		return limits, nil
+	}
+	if status != http.StatusUnauthorized {
+		return nil, err
+	}
+	token, refreshErr := refreshAccountTokens(name)
+	if refreshErr != nil {
+		return nil, fmt.Errorf("usage unauthorized and refresh failed: %w", refreshErr)
+	}
+	limits, _, err = fetchUsage(token)
+	return limits, err
 }
 
 type accountUsageResult struct {
@@ -476,12 +496,7 @@ func cmdUsage(name string) {
 		for i, name := range names {
 			go func(i int, name string) {
 				defer wg.Done()
-				token, err := accountAccessToken(name)
-				if err != nil {
-					results[i] = accountUsageResult{name: name, err: err}
-					return
-				}
-				limits, err := fetchUsage(token)
+				limits, err := fetchAccountUsage(name)
 				results[i] = accountUsageResult{name: name, limits: limits, err: err}
 			}(i, name)
 		}
