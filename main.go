@@ -33,6 +33,7 @@ func cmdHelp() {
 		{"cc-switch list", "", "list saved accounts with details"},
 		{"cc-switch whoami", "", "show the active account"},
 		{"cc-switch usage", "[name]", "show rate-limit usage (all accounts, or a named one)"},
+		{"cc-switch completion", "{bash|fish|zsh}", "print a shell completion script"},
 		{"cc-switch help", "", "show this help"},
 	}
 	for _, line := range helpLines {
@@ -55,7 +56,7 @@ func cmdHelp() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "Usage: cc-switch {save [name]|sync|use [name]|remove [name]|rename [old] [new]|list|whoami|usage [name]|help}")
+	fmt.Fprintln(os.Stderr, "Usage: cc-switch {save [name]|sync|use [name]|remove [name]|rename [old] [new]|list|whoami|usage [name]|completion {bash|fish|zsh}|help}")
 	fmt.Fprintln(os.Stderr, "Run 'cc-switch help' for more information.")
 	os.Exit(1)
 }
@@ -92,6 +93,8 @@ func main() {
 		cmdWhoami()
 	case "usage", "limit":
 		cmdUsage(arg(2))
+	case "completion":
+		cmdCompletion(arg(2))
 	case "help", "-h", "--help":
 		cmdHelp()
 	default:

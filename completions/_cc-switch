@@ -1,0 +1,53 @@
+#compdef cc-switch
+
+_cc_switch_accounts() {
+  local -a accounts
+  accounts=("$HOME"/.cc-accounts/*.json(N:t:r))
+  _describe 'saved account' accounts
+}
+
+_cc-switch() {
+  local -a commands
+
+  commands=(
+    'save:snapshot the currently logged-in account'
+    'sync:update the active account snapshot'
+    'use:switch to a saved account'
+    'remove:delete a saved account'
+    'rm:delete a saved account'
+    'rename:rename a saved account'
+    'mv:rename a saved account'
+    'list:list saved accounts'
+    'whoami:show the active account'
+    'usage:show rate-limit usage'
+    'limit:show rate-limit usage'
+    'completion:generate shell completion'
+    'help:show help'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'command' commands
+    return
+  fi
+
+  case $words[2] in
+    use|remove|rm|usage|limit)
+      _cc_switch_accounts
+      ;;
+    rename|mv)
+      if (( CURRENT == 3 )); then
+        _cc_switch_accounts
+      else
+        _message 'new account name'
+      fi
+      ;;
+    save)
+      _message 'account name'
+      ;;
+    completion)
+      _values 'shell' bash fish zsh
+      ;;
+  esac
+}
+
+_cc-switch "$@"

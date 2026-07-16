@@ -30,9 +30,66 @@ Requires [Go](https://go.dev/) and [Claude Code](https://docs.anthropic.com/en/d
 | `cc-switch list`               | List saved accounts                                  |
 | `cc-switch whoami`             | Show the active account                              |
 | `cc-switch usage [name]`       | Show rate-limit usage (all accounts, or a named one) |
+| `cc-switch completion <shell>` | Print a completion script for Bash, Fish, or Zsh     |
 | `cc-switch help`               | Show help                                            |
 
 Omit `[name]` in an interactive terminal and you'll get a prompt.
+
+## Shell completion
+
+Choose your shell:
+
+### Zsh
+
+Create a completion directory and add it to `fpath`:
+
+```bash
+completion_dir="${ZDOTDIR:-$HOME}/.zfunc"
+mkdir -p "$completion_dir"
+cc-switch completion zsh > "$completion_dir/_cc-switch"
+```
+
+Add this before `compinit` in `${ZDOTDIR:-$HOME}/.zshrc`:
+
+```zsh
+fpath=("${ZDOTDIR:-$HOME}/.zfunc" $fpath)
+autoload -Uz compinit
+compinit
+```
+
+With Oh My Zsh, use its custom completion directory instead; it is already
+added to `fpath` and is kept separate from framework updates:
+
+```zsh
+completion_dir="${ZSH_CUSTOM:-${ZSH:-$HOME/.oh-my-zsh}/custom}/completions"
+mkdir -p "$completion_dir"
+cc-switch completion zsh > "$completion_dir/_cc-switch"
+```
+
+Restart Zsh with `exec zsh`.
+
+### Bash
+
+Install
+[bash-completion](https://github.com/scop/bash-completion) first, then write
+the script to its per-user completion directory:
+
+```bash
+completion_dir="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}/completions"
+mkdir -p "$completion_dir"
+cc-switch completion bash > "$completion_dir/cc-switch"
+exec bash
+```
+
+### Fish
+
+```fish
+set -q XDG_CONFIG_HOME; or set XDG_CONFIG_HOME "$HOME/.config"
+set completion_dir "$XDG_CONFIG_HOME/fish/completions"
+mkdir -p "$completion_dir"
+cc-switch completion fish > "$completion_dir/cc-switch.fish"
+exec fish
+```
 
 ## First-time setup
 
