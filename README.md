@@ -4,6 +4,8 @@ CLI to switch between Claude Code accounts without logging in again.
 
 Snapshots the active OAuth credentials, then restores them when you switch. Saved under `~/.cc-accounts/`.
 
+> **macOS is not supported yet.** Claude Code stores its OAuth credentials in the macOS Keychain there instead of `~/.claude/.credentials.json`, and cc-switch only reads/writes that file. Linux and Windows are unaffected — Claude Code uses `.credentials.json` on both.
+
 ## Install
 
 ```bash
