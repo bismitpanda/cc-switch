@@ -36,11 +36,6 @@ func homeDir() string {
 	return h
 }
 
-func fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
-	os.Exit(1)
-}
-
 func readJSONObject(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

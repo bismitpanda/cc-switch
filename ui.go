@@ -78,6 +78,11 @@ func printError(name, msg string) {
 	fmt.Fprintln(os.Stderr, errorStyle.Render(msg))
 }
 
+func fatalf(format string, args ...any) {
+	printError("", fmt.Sprintf(format, args...))
+	os.Exit(1)
+}
+
 var whoamiFields = []struct {
 	key   string
 	label string
