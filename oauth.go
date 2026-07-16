@@ -17,9 +17,11 @@ const (
 	oauthTokenURL     = "https://platform.claude.com/v1/oauth/token"
 	oauthScopes       = "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
 	oauthExpiryBuffer = 5 * time.Minute
+	apiRequestTimeout = 10 * time.Second
 )
 
-var accountRefreshMu sync.Map // name -> *sync.Mutex
+var accountRefreshMu sync.Map
+var apiHTTPClient = &http.Client{Timeout: apiRequestTimeout}
 
 func accountMutex(name string) *sync.Mutex {
 	v, _ := accountRefreshMu.LoadOrStore(name, &sync.Mutex{})
@@ -53,6 +55,26 @@ func accountClaudeAiOauth(name string) (map[string]any, map[string]any, error) {
 		return nil, nil, fmt.Errorf("account '%s' has invalid claudeAiOauth credentials", name)
 	}
 	return snap, oauth, nil
+}
+
+func liveClaudeAiOauth() (map[string]any, error) {
+	cf := credFile()
+	cred, err := readJSONObject(cf)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("no credentials file at %s yet — run 'claude auth login' first", cf)
+		}
+		return nil, err
+	}
+	oauthVal, ok := cred["claudeAiOauth"]
+	if !ok || oauthVal == nil {
+		return nil, fmt.Errorf("live credentials have no claudeAiOauth credentials")
+	}
+	oauth, ok := oauthVal.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("live credentials have invalid claudeAiOauth credentials")
+	}
+	return oauth, nil
 }
 
 func stringField(m map[string]any, key string) (string, bool) {
@@ -108,7 +130,7 @@ func refreshOAuthCredentials(refreshToken string) (oauthRefreshResponse, error) 
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apiHTTPClient.Do(req)
 	if err != nil {
 		return oauthRefreshResponse{}, err
 	}
@@ -150,10 +172,17 @@ func applyRefreshedTokens(oauth map[string]any, refreshed oauthRefreshResponse) 
 	}
 }
 
-func persistAccountOAuth(name string, snap map[string]any, oauth map[string]any) error {
+func persistAccountSnapshotOAuth(name string, snap map[string]any, oauth map[string]any) error {
 	snap["claudeAiOauth"] = oauth
 	if err := writeJSONObject(accountSnapPath(name), snap, 0600); err != nil {
 		return fmt.Errorf("could not update snapshot for %s: %w", name, err)
+	}
+	return nil
+}
+
+func persistAccountOAuth(name string, snap map[string]any, oauth map[string]any) error {
+	if err := persistAccountSnapshotOAuth(name, snap, oauth); err != nil {
+		return err
 	}
 	active, _ := activeOAuthAccount()
 	if isActiveSavedAccount(name, active) {
@@ -174,6 +203,83 @@ func writeLiveClaudeAiOauth(oauth map[string]any) error {
 	}
 	cred["claudeAiOauth"] = oauth
 	return writeJSONObject(cf, cred, 0600)
+}
+
+func syncLiveAccountSnapshot(name string) error {
+	mu := accountMutex(name)
+	mu.Lock()
+	defer mu.Unlock()
+
+	active, err := activeOAuthAccount()
+	if err != nil {
+		return err
+	}
+	if !isActiveSavedAccount(name, active) {
+		return fmt.Errorf("account '%s' is no longer selected", name)
+	}
+	live, err := liveClaudeAiOauth()
+	if err != nil {
+		return err
+	}
+	snap, _, err := accountClaudeAiOauth(name)
+	if err != nil {
+		return err
+	}
+	return persistAccountSnapshotOAuth(name, snap, live)
+}
+
+func refreshLiveAccountTokens(name string) (string, error) {
+	mu := accountMutex(name)
+	mu.Lock()
+	defer mu.Unlock()
+
+	activeBefore, err := activeOAuthAccount()
+	if err != nil {
+		return "", err
+	}
+	if !isActiveSavedAccount(name, activeBefore) {
+		return "", fmt.Errorf("account '%s' is no longer selected", name)
+	}
+
+	liveBefore, err := liveClaudeAiOauth()
+	if err != nil {
+		return "", err
+	}
+	refreshToken, ok := stringField(liveBefore, "refreshToken")
+	if !ok {
+		return "", fmt.Errorf("selected account '%s' has no refresh token — re-login", name)
+	}
+
+	refreshed, err := refreshOAuthCredentials(refreshToken)
+	if err != nil {
+		return "", fmt.Errorf("selected account '%s' token refresh failed: %w", name, err)
+	}
+
+	activeAfter, err := activeOAuthAccount()
+	if err != nil {
+		return "", err
+	}
+	liveAfter, err := liveClaudeAiOauth()
+	if err != nil {
+		return "", err
+	}
+	if !jsonEqual(activeBefore, activeAfter) || !jsonEqual(liveBefore, liveAfter) {
+		return "", fmt.Errorf("live credentials changed during refresh; retry")
+	}
+
+	applyRefreshedTokens(liveAfter, refreshed)
+	if err := writeLiveClaudeAiOauth(liveAfter); err != nil {
+		return "", fmt.Errorf("could not update live credentials: %w", err)
+	}
+
+	snap, _, err := accountClaudeAiOauth(name)
+	if err != nil {
+		return "", err
+	}
+	if err := persistAccountSnapshotOAuth(name, snap, liveAfter); err != nil {
+		return "", err
+	}
+	return refreshed.AccessToken, nil
 }
 
 func refreshAccountTokens(name string) (string, error) {

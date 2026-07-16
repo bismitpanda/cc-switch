@@ -12,12 +12,16 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 )
 
-func credFile() string {
+func claudeDir() string {
 	dir := os.Getenv("CLAUDE_CONFIG_DIR")
 	if dir == "" {
 		dir = filepath.Join(homeDir(), ".claude")
 	}
-	return filepath.Join(dir, ".credentials.json")
+	return dir
+}
+
+func credFile() string {
+	return filepath.Join(claudeDir(), ".credentials.json")
 }
 
 func globalFile() string {

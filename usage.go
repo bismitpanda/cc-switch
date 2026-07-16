@@ -360,7 +360,7 @@ func fetchUsage(token string) ([]usageLimit, int, error) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apiHTTPClient.Do(req)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -381,7 +381,57 @@ func fetchUsage(token string) ([]usageLimit, int, error) {
 	return parseUsageLimits(raw), resp.StatusCode, nil
 }
 
-func fetchAccountUsage(name string) ([]usageLimit, error) {
+func fetchLiveAccountUsage(name string) ([]usageLimit, error) {
+	const attempts = 3
+	const retryDelay = 300 * time.Millisecond
+
+	var lastErr error
+	for attempt := range attempts {
+		live, err := liveClaudeAiOauth()
+		if err != nil {
+			return nil, err
+		}
+		token, ok := stringField(live, "accessToken")
+		if !ok {
+			return nil, fmt.Errorf("live credentials have no access token")
+		}
+
+		limits, status, err := fetchUsage(token)
+		if err == nil {
+			if syncErr := syncLiveAccountSnapshot(name); syncErr != nil {
+				return nil, fmt.Errorf("could not sync live credentials: %w", syncErr)
+			}
+			return limits, nil
+		}
+		if status != http.StatusUnauthorized && status != 0 {
+			return nil, err
+		}
+		lastErr = err
+		if attempt+1 < attempts {
+			time.Sleep(retryDelay)
+		}
+	}
+	return nil, fmt.Errorf("usage failed while Claude has an active session after %d attempts: %w", attempts, lastErr)
+}
+
+func fetchSelectedAccountUsage(name string) ([]usageLimit, error) {
+	sessionCount, err := activeClaudeSessionCount()
+	if err != nil {
+		return nil, err
+	}
+	if sessionCount > 0 {
+		return fetchLiveAccountUsage(name)
+	}
+
+	token, err := refreshLiveAccountTokens(name)
+	if err != nil {
+		return nil, err
+	}
+	limits, _, err := fetchUsage(token)
+	return limits, err
+}
+
+func fetchSavedAccountUsage(name string) ([]usageLimit, error) {
 	token, err := ensureAccountAccessToken(name)
 	if err != nil {
 		return nil, err
@@ -399,6 +449,13 @@ func fetchAccountUsage(name string) ([]usageLimit, error) {
 	}
 	limits, _, err = fetchUsage(token)
 	return limits, err
+}
+
+func fetchAccountUsage(name string, selected bool) ([]usageLimit, error) {
+	if selected {
+		return fetchSelectedAccountUsage(name)
+	}
+	return fetchSavedAccountUsage(name)
 }
 
 type accountUsageResult struct {
@@ -492,11 +549,21 @@ func cmdUsage(name string) {
 	var wg sync.WaitGroup
 	wg.Add(len(names))
 
+	selectedAccount, selectedErr := activeOAuthAccount()
+
 	fetch := func() {
 		for i, name := range names {
 			go func(i int, name string) {
 				defer wg.Done()
-				limits, err := fetchAccountUsage(name)
+				if selectedErr != nil {
+					results[i] = accountUsageResult{
+						name: name,
+						err:  fmt.Errorf("could not determine selected account: %w", selectedErr),
+					}
+					return
+				}
+				selected := isActiveSavedAccount(name, selectedAccount)
+				limits, err := fetchAccountUsage(name, selected)
 				results[i] = accountUsageResult{name: name, limits: limits, err: err}
 			}(i, name)
 		}
