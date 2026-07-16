@@ -23,6 +23,7 @@ complete -c cc-switch -n __cc_switch_needs_command -a rename -d 'Rename a saved 
 complete -c cc-switch -n __cc_switch_needs_command -a mv -d 'Rename a saved account'
 complete -c cc-switch -n __cc_switch_needs_command -a list -d 'List saved accounts'
 complete -c cc-switch -n __cc_switch_needs_command -a whoami -d 'Show the active account'
+complete -c cc-switch -n __cc_switch_needs_command -a status -d 'Show credential validity and expiry'
 complete -c cc-switch -n __cc_switch_needs_command -a usage -d 'Show rate-limit usage'
 complete -c cc-switch -n __cc_switch_needs_command -a limit -d 'Show rate-limit usage'
 complete -c cc-switch -n __cc_switch_needs_command -a completion -d 'Generate shell completion'

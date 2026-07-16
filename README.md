@@ -31,6 +31,7 @@ Requires [Go](https://go.dev/) and [Claude Code](https://docs.anthropic.com/en/d
 | `cc-switch rename [old] [new]` | Rename a saved account                               |
 | `cc-switch list`               | List saved accounts                                  |
 | `cc-switch whoami`             | Show the active account                              |
+| `cc-switch status`             | Show credential validity and expiry                  |
 | `cc-switch usage [name]`       | Show rate-limit usage (all accounts, or a named one) |
 | `cc-switch completion <shell>` | Print a completion script for Bash, Fish, or Zsh     |
 | `cc-switch help`               | Show help                                            |

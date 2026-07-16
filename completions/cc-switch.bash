@@ -13,7 +13,7 @@ _cc_switch_completion() {
     command=${COMP_WORDS[1]}
 
     if (( COMP_CWORD == 1 )); then
-        COMPREPLY=($(compgen -W 'save sync use remove rm rename mv list whoami usage limit completion help' -- "$cur"))
+        COMPREPLY=($(compgen -W 'save sync use remove rm rename mv list whoami status usage limit completion help' -- "$cur"))
         return
     fi
 

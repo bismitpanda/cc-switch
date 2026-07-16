@@ -350,7 +350,7 @@ func cmdList() {
 		activeRows[i] = isActiveSavedAccount(name, active)
 		account := name
 		if activeRows[i] {
-			account = "● " + name
+			account = name + " ●"
 		}
 		email, org, typ := "—", "—", "—"
 		if oauth, ok := savedOAuthAccount(name); ok {
@@ -366,15 +366,15 @@ func cmdList() {
 		BorderStyle(mutedStyle).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if row == table.HeaderRow {
-				return labelStyle.Bold(true)
+				return labelStyle.Bold(true).Padding(0, 1)
 			}
 			if activeRows[row] && col == 0 {
-				return accountStyle.Bold(true).Foreground(lipgloss.Color("42"))
+				return accountStyle.Bold(true).Foreground(lipgloss.Color("42")).Padding(0, 1)
 			}
 			if col == 0 {
-				return accountStyle
+				return accountStyle.Padding(0, 1)
 			}
-			return whoamiValStyle
+			return whoamiValStyle.Padding(0, 1)
 		}).
 		Headers("Account", "Email", "Organization", "Type").
 		Rows(rows...)

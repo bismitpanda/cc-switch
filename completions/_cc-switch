@@ -19,6 +19,7 @@ _cc-switch() {
     'mv:rename a saved account'
     'list:list saved accounts'
     'whoami:show the active account'
+    'status:show credential validity and expiry'
     'usage:show rate-limit usage'
     'limit:show rate-limit usage'
     'completion:generate shell completion'
