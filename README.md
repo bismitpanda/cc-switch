@@ -8,6 +8,12 @@ Snapshots the active OAuth credentials, then restores them when you switch. Save
 
 ## Install
 
+Download a prebuilt binary from the
+[latest release](https://github.com/bismitpanda/cc-switch/releases/latest)
+(Linux and Windows, amd64/arm64).
+
+Or with Go:
+
 ```bash
 go install github.com/bismitpanda/cc-switch@latest
 ```
@@ -18,7 +24,7 @@ Or from a local clone:
 go build -ldflags "-X main.version=$(git rev-parse --short=7 HEAD)" -o cc-switch .
 ```
 
-Requires [Go](https://go.dev/) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`).
+Requires [Go](https://go.dev/) (for `go install` / local builds) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`).
 
 ## Commands
 

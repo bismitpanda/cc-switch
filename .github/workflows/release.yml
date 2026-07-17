@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          mkdir -p dist
+          for GOOS in linux windows; do
+            for GOARCH in amd64 arm64; do
+              EXT=""
+              [ "$GOOS" = "windows" ] && EXT=".exe"
+              OUT="dist/cc-switch-${VERSION}-${GOOS}-${GOARCH}${EXT}"
+              CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+                go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "$OUT" .
+            done
+          done
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
