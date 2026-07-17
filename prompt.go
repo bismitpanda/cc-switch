@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"golang.org/x/term"
 )
 
@@ -37,7 +37,7 @@ func withCancelHelp(field huh.Field, cancel key.Binding) huh.Field {
 	return &fieldWithCancelHelp{Field: field, cancel: cancel}
 }
 
-func (f *fieldWithCancelHelp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (f *fieldWithCancelHelp) Update(msg tea.Msg) (huh.Model, tea.Cmd) {
 	m, cmd := f.Field.Update(msg)
 	f.Field = m.(huh.Field)
 	return f, cmd
@@ -53,7 +53,7 @@ func (f *fieldWithCancelHelp) WithKeyMap(k *huh.KeyMap) huh.Field {
 	return f
 }
 
-func (f *fieldWithCancelHelp) WithTheme(t *huh.Theme) huh.Field {
+func (f *fieldWithCancelHelp) WithTheme(t huh.Theme) huh.Field {
 	f.Field = f.Field.WithTheme(t)
 	return f
 }
@@ -74,27 +74,10 @@ func (f *fieldWithCancelHelp) WithPosition(p huh.FieldPosition) huh.Field {
 }
 
 func runPrompt(form *huh.Form) error {
-	form = form.WithKeyMap(promptKeyMap())
-
-	form.SubmitCmd = tea.Quit
-	form.CancelCmd = tea.Quit
-
-	m, err := tea.NewProgram(form,
-		tea.WithOutput(os.Stderr),
-		tea.WithReportFocus(),
-	).Run()
-	if m != nil {
-		if f, ok := m.(*huh.Form); ok && f.State == huh.StateAborted {
-			return huh.ErrUserAborted
-		}
-	}
-	if errors.Is(err, tea.ErrInterrupted) {
-		return huh.ErrUserAborted
-	}
-	if err != nil {
-		return err
-	}
-	return nil
+	form = form.
+		WithKeyMap(promptKeyMap()).
+		WithProgramOptions(tea.WithOutput(os.Stderr))
+	return form.Run()
 }
 
 func exitOnPromptCancel(err error) {

@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 )
 
 func claudeDir() string {
@@ -378,7 +378,7 @@ func cmdList() {
 		}).
 		Headers("Account", "Email", "Organization", "Type").
 		Rows(rows...)
-	fmt.Println(t)
+	lipgloss.Println(t)
 }
 
 func listAccountNames() []string {

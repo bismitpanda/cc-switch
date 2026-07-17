@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -261,7 +261,7 @@ func printUsageLimit(limit usageLimit, labelWidth int) {
 	if limit.ResetsAt != "" {
 		line += " " + mutedStyle.Render("— "+formatResetAt(limit.ResetsAt))
 	}
-	fmt.Println(line)
+	lipgloss.Println(line)
 }
 
 func printAccountUsage(name string, limits []usageLimit, active, grayed bool) {
@@ -271,13 +271,13 @@ func printAccountUsage(name string, limits []usageLimit, active, grayed bool) {
 		if resetAt, ok := usableAgainResetsAt(limits); ok {
 			line += " " + mutedStyle.Render("— "+formatResetAt(resetAt))
 		}
-		fmt.Println(line)
+		lipgloss.Println(line)
 	} else {
 		header := titleStyle.Render(name)
 		if active {
 			header += " " + successStyle.Render("● active")
 		}
-		fmt.Println(header)
+		lipgloss.Println(header)
 	}
 	if len(limits) == 0 {
 		printMuted("  (no usage limits returned)")
@@ -525,7 +525,7 @@ func printUnavailableAccounts(results []accountUsageResult) {
 			fmt.Println()
 		}
 		if res.err != nil {
-			fmt.Println(mutedStyle.Render(res.name))
+			lipgloss.Println(mutedStyle.Render(res.name))
 			printMuted("  " + res.err.Error())
 			continue
 		}

@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"golang.org/x/term"
 )
 
@@ -46,8 +46,8 @@ func (m loaderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m loaderModel) View() string {
-	return m.spinner.View() + " " + mutedStyle.Render(m.label)
+func (m loaderModel) View() tea.View {
+	return tea.NewView(m.spinner.View() + " " + mutedStyle.Render(m.label))
 }
 
 func runWithLoader(label string, work func()) {

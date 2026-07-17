@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"charm.land/lipgloss/v2"
 )
 
 var version = "dev"
@@ -17,9 +19,9 @@ func formatHelpCmd(cmd, args string) string {
 
 func cmdHelp() {
 	initStyles()
-	fmt.Println(helpTitleStyle.Render(fmt.Sprintf("cc-switch (v. %s) — switch the active Claude Code account", version)))
+	lipgloss.Println(helpTitleStyle.Render(fmt.Sprintf("cc-switch (v. %s) — switch the active Claude Code account", version)))
 	fmt.Println()
-	fmt.Println(labelStyle.Render("Usage:"))
+	lipgloss.Println(labelStyle.Render("Usage:"))
 	helpLines := []struct {
 		cmd  string
 		args string
@@ -38,10 +40,10 @@ func cmdHelp() {
 		{"cc-switch help", "", "show this help"},
 	}
 	for _, line := range helpLines {
-		fmt.Printf("  %s  %s\n", formatHelpCmd(line.cmd, line.args), mutedStyle.Render(line.desc))
+		lipgloss.Printf("  %s  %s\n", formatHelpCmd(line.cmd, line.args), mutedStyle.Render(line.desc))
 	}
 	fmt.Println()
-	fmt.Println(labelStyle.Render("First-time setup for multiple accounts:"))
+	lipgloss.Println(labelStyle.Render("First-time setup for multiple accounts:"))
 	setupLines := []string{
 		"claude auth login          # login with account A",
 		"cc-switch save personal",
@@ -52,7 +54,7 @@ func cmdHelp() {
 		"cc-switch use work",
 	}
 	for _, line := range setupLines {
-		fmt.Println("  " + mutedStyle.Render(line))
+		lipgloss.Println("  " + mutedStyle.Render(line))
 	}
 }
 

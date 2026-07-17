@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 )
 
 type tokenState int
@@ -102,7 +102,7 @@ func cmdStatus() {
 		}).
 		Headers("Account", "Access token", "Refresh token").
 		Rows(tableRows...)
-	fmt.Println(t)
+	lipgloss.Println(t)
 }
 
 func makeAuthStatusRow(name string, active bool, oauth map[string]any, loadErr error, now time.Time) authStatusRow {

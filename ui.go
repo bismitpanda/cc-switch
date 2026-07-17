@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"golang.org/x/term"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -39,7 +39,7 @@ func initStyles() {
 	stylesReady = true
 
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		lipgloss.SetColorProfile(termenv.Ascii)
+		lipgloss.Writer = colorprofile.NewWriter(os.Stdout, []string{"TERM=dumb"})
 	}
 
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
@@ -61,21 +61,21 @@ func initStyles() {
 
 func printMuted(msg string) {
 	initStyles()
-	fmt.Println(mutedStyle.Render(msg))
+	lipgloss.Println(mutedStyle.Render(msg))
 }
 
 func printSuccess(msg string) {
 	initStyles()
-	fmt.Println(successStyle.Render(msg))
+	lipgloss.Println(successStyle.Render(msg))
 }
 
 func printError(name, msg string) {
 	initStyles()
 	if name != "" {
-		fmt.Fprintf(os.Stderr, "%s: %s\n", accountStyle.Render(name), errorStyle.Render(msg))
+		lipgloss.Fprintf(os.Stderr, "%s: %s\n", accountStyle.Render(name), errorStyle.Render(msg))
 		return
 	}
-	fmt.Fprintln(os.Stderr, errorStyle.Render(msg))
+	lipgloss.Fprintln(os.Stderr, errorStyle.Render(msg))
 }
 
 func fatalf(format string, args ...any) {
@@ -151,9 +151,9 @@ func printWhoami(oauth any) {
 		}
 	}
 
-	fmt.Println(titleStyle.Render("Active account"))
+	lipgloss.Println(titleStyle.Render("Active account"))
 	for _, line := range lines {
-		fmt.Printf("  %s %s\n",
+		lipgloss.Printf("  %s %s\n",
 			whoamiKeyStyle.Width(labelWidth).Align(lipgloss.Right).Render(line.label+":"),
 			whoamiValStyle.Render(line.value),
 		)
