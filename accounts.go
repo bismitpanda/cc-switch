@@ -422,20 +422,36 @@ func jsonEqual(a, b any) bool {
 	return string(da) == string(db)
 }
 
+func oauthAccountIdentity(oauth any) (string, bool) {
+	m, ok := oauth.(map[string]any)
+	if !ok || m == nil {
+		return "", false
+	}
+	if uuid, ok := stringField(m, "accountUuid"); ok {
+		return "uuid:" + uuid, true
+	}
+	if email, ok := stringField(m, "emailAddress"); ok {
+		return "email:" + strings.ToLower(email), true
+	}
+	return "", false
+}
+
+func sameOAuthAccount(a, b any) bool {
+	idA, okA := oauthAccountIdentity(a)
+	idB, okB := oauthAccountIdentity(b)
+	if okA && okB {
+		return idA == idB
+	}
+	return jsonEqual(a, b)
+}
+
 func isActiveSavedAccount(name string, active any) bool {
 	if active == nil {
 		return false
 	}
-	if err := validateAccountName(name); err != nil {
+	saved, ok := savedOAuthAccount(name)
+	if !ok {
 		return false
 	}
-	snap, err := readJSONObject(accountSnapPath(name))
-	if err != nil {
-		return false
-	}
-	saved, ok := snap["oauthAccount"]
-	if !ok || saved == nil {
-		return false
-	}
-	return jsonEqual(active, saved)
+	return sameOAuthAccount(active, saved)
 }

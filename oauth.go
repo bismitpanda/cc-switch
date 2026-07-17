@@ -263,7 +263,7 @@ func refreshLiveAccountTokens(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !jsonEqual(activeBefore, activeAfter) || !jsonEqual(liveBefore, liveAfter) {
+	if !sameOAuthAccount(activeBefore, activeAfter) || !jsonEqual(liveBefore, liveAfter) {
 		return "", fmt.Errorf("live credentials changed during refresh; retry")
 	}
 
