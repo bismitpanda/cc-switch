@@ -451,11 +451,49 @@ func fetchSavedAccountUsage(name string) ([]usageLimit, error) {
 	return limits, err
 }
 
-func fetchAccountUsage(name string, selected bool) ([]usageLimit, error) {
-	if selected {
+type usageFetcher interface {
+	fetch(name string) ([]usageLimit, error)
+}
+
+type liveUsageFetcher struct {
+	selectedAccount any
+}
+
+func (f liveUsageFetcher) fetch(name string) ([]usageLimit, error) {
+	if isActiveSavedAccount(name, f.selectedAccount) {
 		return fetchSelectedAccountUsage(name)
 	}
 	return fetchSavedAccountUsage(name)
+}
+
+type snapshotUsageFetcher struct{}
+
+func (snapshotUsageFetcher) fetch(name string) ([]usageLimit, error) {
+	token, err := snapshotAccountAccessToken(name)
+	if err != nil {
+		return nil, err
+	}
+	limits, _, err := fetchUsage(token)
+	return limits, err
+}
+
+type failingUsageFetcher struct {
+	err error
+}
+
+func (f failingUsageFetcher) fetch(string) ([]usageLimit, error) {
+	return nil, fmt.Errorf("could not determine selected account: %w", f.err)
+}
+
+func newUsageFetcher(snapshotOnly bool) usageFetcher {
+	if snapshotOnly {
+		return snapshotUsageFetcher{}
+	}
+	selectedAccount, err := activeOAuthAccount()
+	if err != nil {
+		return failingUsageFetcher{err: err}
+	}
+	return liveUsageFetcher{selectedAccount: selectedAccount}
 }
 
 type accountUsageResult struct {
@@ -537,6 +575,7 @@ type usageOptions struct {
 	activeOnly      bool
 	availableOnly   bool
 	unavailableOnly bool
+	snapshotOnly    bool
 }
 
 func usageResultUnavailable(res accountUsageResult) bool {
@@ -571,21 +610,13 @@ func cmdUsage(name string, opts usageOptions) {
 	var wg sync.WaitGroup
 	wg.Add(len(names))
 
-	selectedAccount, selectedErr := activeOAuthAccount()
+	fetcher := newUsageFetcher(opts.snapshotOnly)
 
 	fetch := func() {
 		for i, name := range names {
 			go func(i int, name string) {
 				defer wg.Done()
-				if selectedErr != nil {
-					results[i] = accountUsageResult{
-						name: name,
-						err:  fmt.Errorf("could not determine selected account: %w", selectedErr),
-					}
-					return
-				}
-				selected := isActiveSavedAccount(name, selectedAccount)
-				limits, err := fetchAccountUsage(name, selected)
+				limits, err := fetcher.fetch(name)
 				results[i] = accountUsageResult{name: name, limits: limits, err: err}
 			}(i, name)
 		}
@@ -593,9 +624,14 @@ func cmdUsage(name string, opts usageOptions) {
 	}
 
 	label := "Fetching usage..."
-	if len(names) == 1 {
+	switch {
+	case opts.snapshotOnly && len(names) == 1:
+		label = fmt.Sprintf("Fetching usage for %s from snapshot...", names[0])
+	case opts.snapshotOnly:
+		label = fmt.Sprintf("Fetching usage for %d accounts from snapshots...", len(names))
+	case len(names) == 1:
 		label = fmt.Sprintf("Fetching usage for %s...", names[0])
-	} else {
+	default:
 		label = fmt.Sprintf("Fetching usage for %d accounts...", len(names))
 	}
 	runWithLoader(label, fetch)

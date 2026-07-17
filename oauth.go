@@ -306,6 +306,18 @@ func refreshAccountTokens(name string) (string, error) {
 	return refreshed.AccessToken, nil
 }
 
+func snapshotAccountAccessToken(name string) (string, error) {
+	_, oauth, err := accountClaudeAiOauth(name)
+	if err != nil {
+		return "", err
+	}
+	token, ok := stringField(oauth, "accessToken")
+	if !ok {
+		return "", fmt.Errorf("account '%s' has no access token", name)
+	}
+	return token, nil
+}
+
 func ensureAccountAccessToken(name string) (string, error) {
 	mu := accountMutex(name)
 	mu.Lock()
