@@ -533,15 +533,37 @@ func printUnavailableAccounts(results []accountUsageResult) {
 	}
 }
 
-func cmdUsage(name string) {
+type usageOptions struct {
+	activeOnly      bool
+	availableOnly   bool
+	unavailableOnly bool
+}
+
+func usageResultUnavailable(res accountUsageResult) bool {
+	return res.err != nil || coreUsageExhausted(res.limits)
+}
+
+func cmdUsage(name string, opts usageOptions) {
+	if name != "" && opts.activeOnly {
+		fatalf("cannot combine an account name with --active")
+	}
+
 	var names []string
-	if name == "" {
+	switch {
+	case opts.activeOnly:
+		activeName, ok := activeSavedAccountName()
+		if !ok {
+			printMuted("(no active saved account)")
+			return
+		}
+		names = []string{activeName}
+	case name == "":
 		names = listAccountNames()
 		if len(names) == 0 {
 			printMuted("(no saved accounts yet)")
 			return
 		}
-	} else {
+	default:
 		names = []string{requireAccountName(name)}
 	}
 
@@ -588,11 +610,87 @@ func cmdUsage(name string) {
 			activeRes = &results[i]
 			continue
 		}
-		if res.err != nil || coreUsageExhausted(res.limits) {
+		if usageResultUnavailable(res) {
 			unavailable = append(unavailable, res)
 			continue
 		}
 		usable = append(usable, res)
+	}
+
+	switch {
+	case opts.activeOnly && opts.unavailableOnly:
+		if activeRes == nil {
+			printMuted("(no active saved account)")
+			return
+		}
+		if !usageResultUnavailable(*activeRes) {
+			printMuted("(active account is available)")
+			return
+		}
+		if activeRes.err != nil {
+			printError(activeRes.name, activeRes.err.Error())
+			return
+		}
+		printAccountUsage(activeRes.name, activeRes.limits, true, true)
+		return
+
+	case opts.activeOnly && opts.availableOnly:
+		if activeRes == nil {
+			printMuted("(no active saved account)")
+			return
+		}
+		if usageResultUnavailable(*activeRes) {
+			if activeRes.err != nil {
+				printError(activeRes.name, activeRes.err.Error())
+				return
+			}
+			printMuted("(active account is unavailable)")
+			return
+		}
+		printAccountUsage(activeRes.name, activeRes.limits, true, false)
+		return
+
+	case opts.activeOnly:
+		if activeRes == nil {
+			printMuted("(no active saved account)")
+			return
+		}
+		if activeRes.err != nil {
+			printError(activeRes.name, activeRes.err.Error())
+			return
+		}
+		printAccountUsage(activeRes.name, activeRes.limits, true, false)
+		return
+
+	case opts.unavailableOnly:
+		if activeRes != nil && usageResultUnavailable(*activeRes) {
+			unavailable = append([]accountUsageResult{*activeRes}, unavailable...)
+		}
+		if len(unavailable) == 0 {
+			printMuted("(no unavailable accounts)")
+			return
+		}
+		printUnavailableAccounts(unavailable)
+		return
+
+	case opts.availableOnly:
+		printed := false
+		if activeRes != nil && !usageResultUnavailable(*activeRes) {
+			printAccountUsage(activeRes.name, activeRes.limits, true, false)
+			printed = true
+		}
+		sortUsableByUsage(usable)
+		for _, res := range usable {
+			if printed {
+				fmt.Println()
+			}
+			printAccountUsage(res.name, res.limits, false, false)
+			printed = true
+		}
+		if !printed {
+			printMuted("(no available accounts)")
+		}
+		return
 	}
 
 	printed := false

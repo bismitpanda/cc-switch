@@ -29,7 +29,16 @@ type authStatusRow struct {
 	refresh tokenStatus
 }
 
-func cmdStatus() {
+type statusOptions struct {
+	activeOnly  bool
+	expiredOnly bool
+}
+
+func rowHasExpiredToken(row authStatusRow) bool {
+	return row.access.state == tokenStateExpired || row.refresh.state == tokenStateExpired
+}
+
+func cmdStatus(opts statusOptions) {
 	initStyles()
 
 	active, _ := activeOAuthAccount()
@@ -41,6 +50,9 @@ func cmdStatus() {
 	for _, name := range names {
 		isActive := isActiveSavedAccount(name, active)
 		hasSavedActive = hasSavedActive || isActive
+		if opts.activeOnly && !isActive {
+			continue
+		}
 
 		var (
 			oauth map[string]any
@@ -51,16 +63,32 @@ func cmdStatus() {
 		} else {
 			_, oauth, err = accountClaudeAiOauth(name)
 		}
-		rows = append(rows, makeAuthStatusRow(name, isActive, oauth, err, now))
+		row := makeAuthStatusRow(name, isActive, oauth, err, now)
+		if opts.expiredOnly && !rowHasExpiredToken(row) {
+			continue
+		}
+		rows = append(rows, row)
 	}
 
 	if active != nil && !hasSavedActive {
 		oauth, err := liveClaudeAiOauth()
-		rows = append(rows, makeAuthStatusRow("(current, unsaved)", true, oauth, err, now))
+		row := makeAuthStatusRow("(current, unsaved)", true, oauth, err, now)
+		if !opts.expiredOnly || rowHasExpiredToken(row) {
+			rows = append(rows, row)
+		}
 	}
 
 	if len(rows) == 0 {
-		printMuted("(no saved or active credentials)")
+		switch {
+		case opts.activeOnly && opts.expiredOnly:
+			printMuted("(active account has no expired tokens)")
+		case opts.activeOnly:
+			printMuted("(no active account)")
+		case opts.expiredOnly:
+			printMuted("(no accounts with expired tokens)")
+		default:
+			printMuted("(no saved or active credentials)")
+		}
 		return
 	}
 

@@ -132,27 +132,52 @@ func newRootCmd() *cobra.Command {
 				cmdWhoami()
 			},
 		},
-		&cobra.Command{
-			Use:   "status",
-			Short: "Show credential validity and expiry",
-			Args:  cobra.NoArgs,
-			Run: func(_ *cobra.Command, _ []string) {
-				cmdStatus()
-			},
-		},
-		&cobra.Command{
-			Use:               "usage [name]",
-			Aliases:           []string{"limit"},
-			Short:             "Show rate-limit usage (all accounts, or a named one)",
-			Args:              cobra.MaximumNArgs(1),
-			ValidArgsFunction: completeAccountNames,
-			Run: func(_ *cobra.Command, args []string) {
-				cmdUsage(optionalName(args))
-			},
-		},
+		newStatusCmd(),
+		newUsageCmd(),
 	)
 
 	return root
+}
+
+func newStatusCmd() *cobra.Command {
+	var activeOnly, expiredOnly bool
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show credential validity and expiry",
+		Args:  cobra.NoArgs,
+		Run: func(_ *cobra.Command, _ []string) {
+			cmdStatus(statusOptions{
+				activeOnly:  activeOnly,
+				expiredOnly: expiredOnly,
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&activeOnly, "active", "A", false, "Show only the active account")
+	cmd.Flags().BoolVarP(&expiredOnly, "expired", "e", false, "Show only accounts with an expired token")
+	return cmd
+}
+
+func newUsageCmd() *cobra.Command {
+	var activeOnly, availableOnly, unavailableOnly bool
+	cmd := &cobra.Command{
+		Use:               "usage [name]",
+		Aliases:           []string{"limit"},
+		Short:             "Show rate-limit usage (all accounts, or a named one)",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeAccountNames,
+		Run: func(_ *cobra.Command, args []string) {
+			cmdUsage(optionalName(args), usageOptions{
+				activeOnly:      activeOnly,
+				availableOnly:   availableOnly,
+				unavailableOnly: unavailableOnly,
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&activeOnly, "active", "A", false, "Show only the active account")
+	cmd.Flags().BoolVarP(&availableOnly, "available", "a", false, "Show only available accounts")
+	cmd.Flags().BoolVarP(&unavailableOnly, "unavailable", "u", false, "Show only unavailable accounts")
+	cmd.MarkFlagsMutuallyExclusive("available", "unavailable")
+	return cmd
 }
 
 func main() {
