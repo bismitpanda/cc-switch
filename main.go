@@ -1,108 +1,167 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
+	"strings"
 
-	"charm.land/lipgloss/v2"
+	"charm.land/fang/v2"
+	"github.com/spf13/cobra"
 )
 
 var version = "dev"
 
-func formatHelpCmd(cmd, args string) string {
-	out := helpCmdStyle.Render(cmd)
-	if args != "" {
-		out += " " + helpArgStyle.Render(args)
+func completeAccountNames(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) != 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	return out
+	return listAccountNames(), cobra.ShellCompDirectiveNoFileComp
 }
 
-func cmdHelp() {
-	initStyles()
-	lipgloss.Println(helpTitleStyle.Render(fmt.Sprintf("cc-switch (v. %s) — switch the active Claude Code account", version)))
-	fmt.Println()
-	lipgloss.Println(labelStyle.Render("Usage:"))
-	helpLines := []struct {
-		cmd  string
-		args string
-		desc string
-	}{
-		{"cc-switch save", "[name]", "snapshot the currently logged-in account"},
-		{"cc-switch sync", "", "update the active account's snapshot from live credentials"},
-		{"cc-switch use", "[name]", "switch to a saved account"},
-		{"cc-switch remove", "[name]", "delete a saved account"},
-		{"cc-switch rename", "[old] [new]", "rename a saved account"},
-		{"cc-switch list", "", "list saved accounts with details"},
-		{"cc-switch whoami", "", "show the active account"},
-		{"cc-switch status", "", "show credential validity and expiry"},
-		{"cc-switch usage", "[name]", "show rate-limit usage (all accounts, or a named one)"},
-		{"cc-switch completion", "{bash|fish|zsh}", "print a shell completion script"},
-		{"cc-switch help", "", "show this help"},
+func completeRenameArgs(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) >= 2 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	for _, line := range helpLines {
-		lipgloss.Printf("  %s  %s\n", formatHelpCmd(line.cmd, line.args), mutedStyle.Render(line.desc))
+	if len(args) == 1 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	fmt.Println()
-	lipgloss.Println(labelStyle.Render("First-time setup for multiple accounts:"))
-	setupLines := []string{
-		"claude auth login          # login with account A",
-		"cc-switch save personal",
-		"claude auth logout",
-		"claude auth login          # login with account B",
-		"cc-switch save work",
-		"cc-switch use personal     # switch without another browser login",
-		"cc-switch use work",
-	}
-	for _, line := range setupLines {
-		lipgloss.Println("  " + mutedStyle.Render(line))
-	}
+	return listAccountNames(), cobra.ShellCompDirectiveNoFileComp
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "Usage: cc-switch {save [name]|sync|use [name]|remove [name]|rename [old] [new]|list|whoami|status|usage [name]|completion {bash|fish|zsh}|help}")
-	fmt.Fprintln(os.Stderr, "Run 'cc-switch help' for more information.")
-	os.Exit(1)
-}
-
-func arg(i int) string {
-	if len(os.Args) > i {
-		return os.Args[i]
+func optionalName(args []string) string {
+	if len(args) > 0 {
+		return args[0]
 	}
 	return ""
 }
 
-func main() {
-	initStyles()
-	ensureSetup()
-
-	if len(os.Args) < 2 {
-		usage()
+func newRootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:   "cc-switch",
+		Short: "Switch the active Claude Code account",
+		Long:  "cc-switch snapshots Claude Code OAuth credentials and restores them when you switch accounts.",
+		Example: `
+  # First-time setup for multiple accounts:
+  claude auth login          # login with account A
+  cc-switch save personal
+  claude auth logout
+  claude auth login          # login with account B
+  cc-switch save work
+  cc-switch use personal     # switch without another browser login
+  cc-switch use work
+`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			name := cmd.Name()
+			if name == "completion" || name == "help" || name == "man" ||
+				strings.HasPrefix(name, "__") {
+				return
+			}
+			initStyles()
+			ensureSetup()
+		},
 	}
 
-	switch os.Args[1] {
-	case "save":
-		cmdSave(arg(2))
-	case "sync":
-		cmdSync()
-	case "use":
-		cmdUse(arg(2))
-	case "remove", "rm":
-		cmdRemove(arg(2))
-	case "rename", "mv":
-		cmdRename(arg(2), arg(3))
-	case "list":
-		cmdList()
-	case "whoami":
-		cmdWhoami()
-	case "status":
-		cmdStatus()
-	case "usage", "limit":
-		cmdUsage(arg(2))
-	case "completion":
-		cmdCompletion(arg(2))
-	case "help", "-h", "--help":
-		cmdHelp()
-	default:
-		usage()
+	root.AddCommand(
+		&cobra.Command{
+			Use:   "save [name]",
+			Short: "Snapshot the currently logged-in account",
+			Args:  cobra.MaximumNArgs(1),
+			Run: func(_ *cobra.Command, args []string) {
+				cmdSave(optionalName(args))
+			},
+		},
+		&cobra.Command{
+			Use:   "sync",
+			Short: "Update the active account's snapshot from live credentials",
+			Args:  cobra.NoArgs,
+			Run: func(_ *cobra.Command, _ []string) {
+				cmdSync()
+			},
+		},
+		&cobra.Command{
+			Use:               "use [name]",
+			Short:             "Switch to a saved account",
+			Args:              cobra.MaximumNArgs(1),
+			ValidArgsFunction: completeAccountNames,
+			Run: func(_ *cobra.Command, args []string) {
+				cmdUse(optionalName(args))
+			},
+		},
+		&cobra.Command{
+			Use:               "remove [name]",
+			Aliases:           []string{"rm"},
+			Short:             "Delete a saved account",
+			Args:              cobra.MaximumNArgs(1),
+			ValidArgsFunction: completeAccountNames,
+			Run: func(_ *cobra.Command, args []string) {
+				cmdRemove(optionalName(args))
+			},
+		},
+		&cobra.Command{
+			Use:               "rename [old] [new]",
+			Aliases:           []string{"mv"},
+			Short:             "Rename a saved account",
+			Args:              cobra.MaximumNArgs(2),
+			ValidArgsFunction: completeRenameArgs,
+			Run: func(_ *cobra.Command, args []string) {
+				oldName, newName := "", ""
+				if len(args) > 0 {
+					oldName = args[0]
+				}
+				if len(args) > 1 {
+					newName = args[1]
+				}
+				cmdRename(oldName, newName)
+			},
+		},
+		&cobra.Command{
+			Use:   "list",
+			Short: "List saved accounts with details",
+			Args:  cobra.NoArgs,
+			Run: func(_ *cobra.Command, _ []string) {
+				cmdList()
+			},
+		},
+		&cobra.Command{
+			Use:   "whoami",
+			Short: "Show the active account",
+			Args:  cobra.NoArgs,
+			Run: func(_ *cobra.Command, _ []string) {
+				cmdWhoami()
+			},
+		},
+		&cobra.Command{
+			Use:   "status",
+			Short: "Show credential validity and expiry",
+			Args:  cobra.NoArgs,
+			Run: func(_ *cobra.Command, _ []string) {
+				cmdStatus()
+			},
+		},
+		&cobra.Command{
+			Use:               "usage [name]",
+			Aliases:           []string{"limit"},
+			Short:             "Show rate-limit usage (all accounts, or a named one)",
+			Args:              cobra.MaximumNArgs(1),
+			ValidArgsFunction: completeAccountNames,
+			Run: func(_ *cobra.Command, args []string) {
+				cmdUsage(optionalName(args))
+			},
+		},
+	)
+
+	return root
+}
+
+func main() {
+	if err := fang.Execute(
+		context.Background(),
+		newRootCmd(),
+		fang.WithVersion(version),
+		fang.WithNotifySignal(os.Interrupt),
+	); err != nil {
+		os.Exit(1)
 	}
 }
