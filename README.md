@@ -40,8 +40,11 @@ Requires [Go](https://go.dev/) (for `go install` / local builds) and [Claude Cod
 | `cc-switch whoami`             | Show the active account                              |
 | `cc-switch status`             | Show credential validity and expiry                  |
 | `cc-switch usage [name]`       | Show rate-limit usage (all accounts, or a named one) |
+| `cc-switch tokens [name]`      | Show Claude Code token usage by account (local JSONL)|
 | `cc-switch completion <shell>` | Print a completion script for Bash, Fish, or Zsh     |
 | `cc-switch help`               | Show help                                            |
+
+`tokens` attributes usage from Claude Code project JSONL logs using `~/.cc-switch/switches.jsonl`. It also shows cumulative active time per account from that switch history (last segment runs until now). Pass `--spend` for estimated USD cost, or `-A` / `--active` for the active account only.
 
 Omit `[name]` in an interactive terminal and you'll get a prompt.
 
@@ -122,5 +125,7 @@ Each save stores `oauthAccount` (from `~/.claude.json`) and `claudeAiOauth` (fro
 `sync` writes the current live credentials back into the active account's snapshot (errors if the active account isn't saved yet).
 
 `use` syncs the outgoing account's snapshot first (when it matches a saved account), then writes the target snapshot into the active Claude Code config files. Each successful switch appends a line to `~/.cc-switch/switches.jsonl` (`ts`, `from`, `to`).
+
+`tokens` reads Claude Code usage from `~/.claude/projects/` (and `~/.config/claude/projects/`), then attributes each entry to whichever account was active at that timestamp per the switch log. `--spend` estimates USD from model pricing (or transcript `costUSD` when present).
 
 Account snapshots are stored with mode `0600`; `~/.cc-switch/` and `accounts/` are `0700`.
