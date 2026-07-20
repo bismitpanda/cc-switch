@@ -125,6 +125,14 @@ func newRootCmd() *cobra.Command {
 			},
 		},
 		&cobra.Command{
+			Use:   "history",
+			Short: "Show account switch history",
+			Args:  cobra.NoArgs,
+			Run: func(_ *cobra.Command, _ []string) {
+				cmdHistory()
+			},
+		},
+		&cobra.Command{
 			Use:   "whoami",
 			Short: "Show the active account",
 			Args:  cobra.NoArgs,

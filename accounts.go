@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
@@ -28,8 +30,22 @@ func globalFile() string {
 	return filepath.Join(homeDir(), ".claude.json")
 }
 
+func rootDir() string {
+	return filepath.Join(homeDir(), ".cc-switch")
+}
+
 func storeDir() string {
-	return filepath.Join(homeDir(), ".cc-accounts")
+	return filepath.Join(rootDir(), "accounts")
+}
+
+func switchesLogPath() string {
+	return filepath.Join(rootDir(), "switches.jsonl")
+}
+
+type switchEvent struct {
+	TS   string `json:"ts"`
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 func homeDir() string {
@@ -94,12 +110,13 @@ func orDefault(v any, ok bool, def any) any {
 }
 
 func ensureSetup() {
-	sd := storeDir()
-	if err := os.MkdirAll(sd, 0700); err != nil {
-		fatalf("could not create %s: %v", sd, err)
-	}
-	if err := os.Chmod(sd, 0700); err != nil {
-		fatalf("could not chmod %s: %v", sd, err)
+	for _, dir := range []string{rootDir(), storeDir()} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			fatalf("could not create %s: %v", dir, err)
+		}
+		if err := os.Chmod(dir, 0700); err != nil {
+			fatalf("could not chmod %s: %v", dir, err)
+		}
 	}
 
 	gf := globalFile()
@@ -108,6 +125,54 @@ func ensureSetup() {
 			fatalf("could not create %s: %v", gf, err)
 		}
 	}
+}
+
+func appendSwitchLog(from, to string) {
+	ev := switchEvent{
+		TS:   time.Now().UTC().Format(time.RFC3339),
+		From: from,
+		To:   to,
+	}
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile(switchesLogPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(data, '\n'))
+}
+
+func readSwitchLog() ([]switchEvent, error) {
+	path := switchesLogPath()
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	var events []switchEvent
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var ev switchEvent
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			continue
+		}
+		events = append(events, ev)
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
 }
 
 func accountSnapPath(name string) string {
@@ -217,7 +282,8 @@ func cmdUse(name string) {
 		fatalf("No saved account called '%s'. Run: cc-switch save %s (while logged into it)", name, name)
 	}
 
-	if current, ok := activeSavedAccountName(); ok && current != name {
+	from, _ := activeSavedAccountName()
+	if from != "" && from != name {
 		if _, err := syncActiveSnapshot(); err != nil {
 			fatalf("%v", err)
 		}
@@ -255,7 +321,32 @@ func cmdUse(name string) {
 		fatalf("could not write %s: %v", cf, err)
 	}
 
+	appendSwitchLog(from, name)
 	printSuccess(fmt.Sprintf("Switched active account to %s", accountStyle.Render(name)))
+}
+
+func cmdHistory() {
+	events, err := readSwitchLog()
+	if err != nil {
+		fatalf("%v", err)
+	}
+	if len(events) == 0 {
+		printMuted("(no switch history yet)")
+		return
+	}
+
+	for i := len(events) - 1; i >= 0; i-- {
+		ev := events[i]
+		from := ev.From
+		if from == "" {
+			from = "—"
+		}
+		lipgloss.Printf("%s  %s → %s\n",
+			mutedStyle.Render(ev.TS),
+			accountStyle.Render(from),
+			accountStyle.Render(ev.To),
+		)
+	}
 }
 
 func cmdRemove(name string) {

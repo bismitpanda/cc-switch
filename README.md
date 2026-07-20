@@ -2,7 +2,7 @@
 
 CLI to switch between Claude Code accounts without logging in again.
 
-Snapshots the active OAuth credentials, then restores them when you switch. Saved under `~/.cc-accounts/`.
+Snapshots the active OAuth credentials, then restores them when you switch. Saved under `~/.cc-switch/accounts/`.
 
 > **macOS is not supported yet.** Claude Code stores its OAuth credentials in the macOS Keychain there instead of `~/.claude/.credentials.json`, and cc-switch only reads/writes that file. Linux and Windows are unaffected — Claude Code uses `.credentials.json` on both.
 
@@ -36,6 +36,7 @@ Requires [Go](https://go.dev/) (for `go install` / local builds) and [Claude Cod
 | `cc-switch remove [name]`      | Delete a saved account                               |
 | `cc-switch rename [old] [new]` | Rename a saved account                               |
 | `cc-switch list`               | List saved accounts                                  |
+| `cc-switch history`            | Show account switch history                          |
 | `cc-switch whoami`             | Show the active account                              |
 | `cc-switch status`             | Show credential validity and expiry                  |
 | `cc-switch usage [name]`       | Show rate-limit usage (all accounts, or a named one) |
@@ -116,10 +117,10 @@ cc-switch use work
 
 ## How it works
 
-Each save stores `oauthAccount` (from `~/.claude.json`) and `claudeAiOauth` (from `~/.claude/.credentials.json`, or `$CLAUDE_CONFIG_DIR/.credentials.json` if set) as `~/.cc-accounts/<name>.json`.
+Each save stores `oauthAccount` (from `~/.claude.json`) and `claudeAiOauth` (from `~/.claude/.credentials.json`, or `$CLAUDE_CONFIG_DIR/.credentials.json` if set) as `~/.cc-switch/accounts/<name>.json`.
 
 `sync` writes the current live credentials back into the active account's snapshot (errors if the active account isn't saved yet).
 
-`use` syncs the outgoing account's snapshot first (when it matches a saved account), then writes the target snapshot into the active Claude Code config files.
+`use` syncs the outgoing account's snapshot first (when it matches a saved account), then writes the target snapshot into the active Claude Code config files. Each successful switch appends a line to `~/.cc-switch/switches.jsonl` (`ts`, `from`, `to`).
 
-Account snapshots are stored with mode `0600`; the store directory is `0700`.
+Account snapshots are stored with mode `0600`; `~/.cc-switch/` and `accounts/` are `0700`.
