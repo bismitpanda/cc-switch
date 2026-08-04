@@ -8,6 +8,31 @@ Snapshots the active OAuth credentials, then restores them when you switch. Save
 
 ## Install
 
+### One-liner (recommended)
+
+Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bismitpanda/cc-switch/main/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/bismitpanda/cc-switch/main/install.ps1 | iex
+```
+
+Re-running either script upgrades only the binary (same install path). Defaults:
+
+| Platform | Install location |
+| -------- | ---------------- |
+| Linux    | `~/.local/bin/cc-switch` |
+| Windows  | `%LOCALAPPDATA%\Programs\cc-switch\cc-switch.exe` |
+
+Optional env overrides: `CC_SWITCH_VERSION` (e.g. `v1.1.1`), `CC_SWITCH_INSTALL_DIR`.
+
+### Manual / other
+
 Download a prebuilt binary from the
 [latest release](https://github.com/bismitpanda/cc-switch/releases/latest)
 (Linux and Windows, amd64/arm64).
@@ -24,7 +49,7 @@ Or from a local clone:
 go build -ldflags "-X main.version=$(git rev-parse --short=7 HEAD)" -o cc-switch .
 ```
 
-Requires [Go](https://go.dev/) (for `go install` / local builds) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`).
+Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`). Go is only needed for `go install` / local builds.
 
 ## Commands
 
