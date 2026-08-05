@@ -130,10 +130,9 @@ func promptSaveName() string {
 	return promptAccountName("personal")
 }
 
-func promptSelectAccount() string {
-	names := listAccountNames()
+func promptSelectFromAccounts(names []string, emptyMsg string) string {
 	if len(names) == 0 {
-		fatalf("No saved accounts yet. Run: cc-switch save <name>")
+		fatalf("%s", emptyMsg)
 	}
 
 	var selected string
@@ -155,4 +154,25 @@ func promptSelectAccount() string {
 	)
 	exitOnPromptCancel(runPrompt(form))
 	return selected
+}
+
+func promptSelectEnabledAccount() string {
+	return promptSelectFromAccounts(
+		listEnabledAccountNames(),
+		"No enabled accounts. Run: cc-switch save <name> (or cc-switch enable <name>)",
+	)
+}
+
+func promptSelectAnyAccount() string {
+	return promptSelectFromAccounts(
+		listAccountNames(),
+		"No saved accounts yet. Run: cc-switch save <name>",
+	)
+}
+
+func promptSelectDisabledAccount() string {
+	return promptSelectFromAccounts(
+		listDisabledAccountNames(),
+		"No disabled accounts.",
+	)
 }

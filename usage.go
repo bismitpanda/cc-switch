@@ -595,15 +595,23 @@ func cmdUsage(name string, opts usageOptions) {
 			printMuted("(no active saved account)")
 			return
 		}
+		if isAccountDisabled(activeName) {
+			printMuted(fmt.Sprintf("(active account %s is disabled)", activeName))
+			return
+		}
 		names = []string{activeName}
 	case name == "":
-		names = listAccountNames()
+		names = listEnabledAccountNames()
 		if len(names) == 0 {
-			printMuted("(no saved accounts yet)")
+			if len(listAccountNames()) == 0 {
+				printMuted("(no saved accounts yet)")
+			} else {
+				printMuted("(no enabled accounts — all saved accounts are disabled)")
+			}
 			return
 		}
 	default:
-		names = []string{requireAccountName(name)}
+		names = []string{requireEnabledAccount(name)}
 	}
 
 	results := make([]accountUsageResult, len(names))

@@ -184,9 +184,76 @@ func resolveAccountName(name string, usage string) string {
 		if !isInteractive() {
 			fatalf("Usage: %s", usage)
 		}
-		return promptSelectAccount()
+		return promptSelectEnabledAccount()
 	}
 	return requireAccountName(name)
+}
+
+func resolveAnyAccountName(name string, usage string) string {
+	if name == "" {
+		if !isInteractive() {
+			fatalf("Usage: %s", usage)
+		}
+		return promptSelectAnyAccount()
+	}
+	return requireAccountName(name)
+}
+
+func resolveDisabledAccountName(name string, usage string) string {
+	if name == "" {
+		if !isInteractive() {
+			fatalf("Usage: %s", usage)
+		}
+		return promptSelectDisabledAccount()
+	}
+	return requireAccountName(name)
+}
+
+func accountExists(name string) bool {
+	_, err := os.Stat(accountSnapPath(name))
+	return err == nil
+}
+
+func isAccountDisabled(name string) bool {
+	if err := validateAccountName(name); err != nil {
+		return false
+	}
+	snap, err := readJSONObject(accountSnapPath(name))
+	if err != nil {
+		return false
+	}
+	disabled, ok := snap["disabled"].(bool)
+	return ok && disabled
+}
+
+func setAccountDisabled(name string, disabled bool) error {
+	path := accountSnapPath(name)
+	snap, err := readJSONObject(path)
+	if err != nil {
+		return err
+	}
+	if disabled {
+		snap["disabled"] = true
+	} else {
+		delete(snap, "disabled")
+	}
+	return writeJSONObject(path, snap, 0600)
+}
+
+func requireExistingAccount(name string) string {
+	name = requireAccountName(name)
+	if !accountExists(name) {
+		fatalf("No saved account called '%s'", name)
+	}
+	return name
+}
+
+func requireEnabledAccount(name string) string {
+	name = requireExistingAccount(name)
+	if isAccountDisabled(name) {
+		fatalf("Account '%s' is disabled. Run: cc-switch enable %s", name, name)
+	}
+	return name
 }
 
 func liveCredentials() (oauth any, claudeAiOauth any, err error) {
@@ -216,7 +283,13 @@ func writeAccountSnapshot(name string, oauth, claudeAiOauth any) error {
 		"oauthAccount":  oauth,
 		"claudeAiOauth": claudeAiOauth,
 	}
-	return writeJSONObject(accountSnapPath(name), snap, 0600)
+	path := accountSnapPath(name)
+	if existing, err := readJSONObject(path); err == nil {
+		if disabled, ok := existing["disabled"].(bool); ok && disabled {
+			snap["disabled"] = true
+		}
+	}
+	return writeJSONObject(path, snap, 0600)
 }
 
 func activeSavedAccountName() (string, bool) {
@@ -280,6 +353,9 @@ func cmdUse(name string) {
 	snapPath := accountSnapPath(name)
 	if _, err := os.Stat(snapPath); os.IsNotExist(err) {
 		fatalf("No saved account called '%s'. Run: cc-switch save %s (while logged into it)", name, name)
+	}
+	if isAccountDisabled(name) {
+		fatalf("Account '%s' is disabled. Run: cc-switch enable %s", name, name)
 	}
 
 	from, _ := activeSavedAccountName()
@@ -350,7 +426,7 @@ func cmdHistory() {
 }
 
 func cmdRemove(name string) {
-	name = resolveAccountName(name, "cc-switch remove <name>")
+	name = resolveAnyAccountName(name, "cc-switch remove <name>")
 	snapPath := accountSnapPath(name)
 	if err := os.Remove(snapPath); err != nil {
 		if os.IsNotExist(err) {
@@ -361,12 +437,33 @@ func cmdRemove(name string) {
 	printSuccess(fmt.Sprintf("Removed saved account %s.", accountStyle.Render(name)))
 }
 
+func cmdDisable(name string) {
+	name = resolveAccountName(name, "cc-switch disable <name>")
+	name = requireEnabledAccount(name)
+	if err := setAccountDisabled(name, true); err != nil {
+		fatalf("could not disable %s: %v", name, err)
+	}
+	printSuccess(fmt.Sprintf("Disabled %s. It stays saved but is skipped by usage/use until re-enabled.", accountStyle.Render(name)))
+}
+
+func cmdEnable(name string) {
+	name = resolveDisabledAccountName(name, "cc-switch enable <name>")
+	name = requireExistingAccount(name)
+	if !isAccountDisabled(name) {
+		fatalf("Account '%s' is not disabled", name)
+	}
+	if err := setAccountDisabled(name, false); err != nil {
+		fatalf("could not enable %s: %v", name, err)
+	}
+	printSuccess(fmt.Sprintf("Enabled %s.", accountStyle.Render(name)))
+}
+
 func cmdRename(oldName, newName string) {
 	if oldName == "" {
 		if !isInteractive() {
 			fatalf("Usage: cc-switch rename <old> <new>")
 		}
-		oldName = promptSelectAccount()
+		oldName = promptSelectAnyAccount()
 	} else {
 		oldName = requireAccountName(oldName)
 	}
@@ -436,12 +533,19 @@ func cmdList() {
 
 	active, _ := activeOAuthAccount()
 	activeRows := make([]bool, len(names))
+	disabledRows := make([]bool, len(names))
 	rows := make([][]string, len(names))
 	for i, name := range names {
 		activeRows[i] = isActiveSavedAccount(name, active)
+		disabledRows[i] = isAccountDisabled(name)
 		account := name
-		if activeRows[i] {
+		switch {
+		case activeRows[i] && disabledRows[i]:
+			account = name + " ● (disabled)"
+		case activeRows[i]:
 			account = name + " ●"
+		case disabledRows[i]:
+			account = name + " (disabled)"
 		}
 		email, org, typ := "—", "—", "—"
 		if oauth, ok := savedOAuthAccount(name); ok {
@@ -459,11 +563,18 @@ func cmdList() {
 			if row == table.HeaderRow {
 				return labelStyle.Bold(true).Padding(0, 1)
 			}
-			if activeRows[row] && col == 0 {
-				return accountStyle.Bold(true).Foreground(lipgloss.Color("42")).Padding(0, 1)
-			}
 			if col == 0 {
-				return accountStyle.Padding(0, 1)
+				switch {
+				case disabledRows[row]:
+					return mutedStyle.Padding(0, 1)
+				case activeRows[row]:
+					return accountStyle.Bold(true).Foreground(lipgloss.Color("42")).Padding(0, 1)
+				default:
+					return accountStyle.Padding(0, 1)
+				}
+			}
+			if disabledRows[row] {
+				return mutedStyle.Padding(0, 1)
 			}
 			return whoamiValStyle.Padding(0, 1)
 		}).
@@ -489,6 +600,26 @@ func listAccountNames() []string {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	return names
+}
+
+func listEnabledAccountNames() []string {
+	var names []string
+	for _, name := range listAccountNames() {
+		if !isAccountDisabled(name) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func listDisabledAccountNames() []string {
+	var names []string
+	for _, name := range listAccountNames() {
+		if isAccountDisabled(name) {
+			names = append(names, name)
+		}
+	}
 	return names
 }
 

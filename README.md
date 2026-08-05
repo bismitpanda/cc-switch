@@ -58,6 +58,8 @@ Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`
 | `cc-switch save [name]`        | Snapshot the currently logged-in account             |
 | `cc-switch sync`               | Update the active account's snapshot from live creds |
 | `cc-switch use [name]`         | Switch to a saved account                            |
+| `cc-switch disable [name]`     | Disable an account (keeps it, skips usage/use)       |
+| `cc-switch enable [name]`      | Re-enable a disabled account                         |
 | `cc-switch remove [name]`      | Delete a saved account                               |
 | `cc-switch rename [old] [new]` | Rename a saved account                               |
 | `cc-switch list`               | List saved accounts                                  |
@@ -150,6 +152,8 @@ Each save stores `oauthAccount` (from `~/.claude.json`) and `claudeAiOauth` (fro
 `sync` writes the current live credentials back into the active account's snapshot (errors if the active account isn't saved yet).
 
 `use` syncs the outgoing account's snapshot first (when it matches a saved account), then writes the target snapshot into the active Claude Code config files. Each successful switch appends a line to `~/.cc-switch/switches.jsonl` (`ts`, `from`, `to`).
+
+`disable` marks a snapshot as disabled without deleting it — useful when a subscription is paused or expired and API calls return 403. Disabled accounts stay in `list` (marked) but are skipped by `usage`/`use`/`status` until `enable`.
 
 `tokens` reads Claude Code usage from `~/.claude/projects/` (and `~/.config/claude/projects/`), then attributes each entry to whichever account was active at that timestamp per the switch log. `--spend` estimates USD from model pricing (or transcript `costUSD` when present).
 

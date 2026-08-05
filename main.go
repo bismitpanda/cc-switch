@@ -15,7 +15,21 @@ func completeAccountNames(_ *cobra.Command, args []string, _ string) ([]string, 
 	if len(args) != 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
+	return listEnabledAccountNames(), cobra.ShellCompDirectiveNoFileComp
+}
+
+func completeAnyAccountNames(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) != 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	return listAccountNames(), cobra.ShellCompDirectiveNoFileComp
+}
+
+func completeDisabledAccountNames(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) != 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return listDisabledAccountNames(), cobra.ShellCompDirectiveNoFileComp
 }
 
 func completeRenameArgs(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
@@ -94,9 +108,27 @@ func newRootCmd() *cobra.Command {
 			Aliases:           []string{"rm"},
 			Short:             "Delete a saved account",
 			Args:              cobra.MaximumNArgs(1),
-			ValidArgsFunction: completeAccountNames,
+			ValidArgsFunction: completeAnyAccountNames,
 			Run: func(_ *cobra.Command, args []string) {
 				cmdRemove(optionalName(args))
+			},
+		},
+		&cobra.Command{
+			Use:               "disable [name]",
+			Short:             "Disable a saved account (keeps it, skips API use)",
+			Args:              cobra.MaximumNArgs(1),
+			ValidArgsFunction: completeAccountNames,
+			Run: func(_ *cobra.Command, args []string) {
+				cmdDisable(optionalName(args))
+			},
+		},
+		&cobra.Command{
+			Use:               "enable [name]",
+			Short:             "Re-enable a disabled account",
+			Args:              cobra.MaximumNArgs(1),
+			ValidArgsFunction: completeDisabledAccountNames,
+			Run: func(_ *cobra.Command, args []string) {
+				cmdEnable(optionalName(args))
 			},
 		},
 		&cobra.Command{

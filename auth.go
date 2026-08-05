@@ -53,6 +53,9 @@ func cmdStatus(opts statusOptions) {
 		if opts.activeOnly && !isActive {
 			continue
 		}
+		if isAccountDisabled(name) && !opts.activeOnly {
+			continue
+		}
 
 		var (
 			oauth map[string]any
