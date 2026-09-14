@@ -199,7 +199,7 @@ func newStatusCmd() *cobra.Command {
 }
 
 func newUsageCmd() *cobra.Command {
-	var activeOnly, availableOnly, unavailableOnly, snapshotOnly bool
+	var activeOnly, availableOnly, unavailableOnly, snapshotOnly, pace bool
 	cmd := &cobra.Command{
 		Use:               "usage [name]",
 		Aliases:           []string{"limit"},
@@ -212,6 +212,7 @@ func newUsageCmd() *cobra.Command {
 				availableOnly:   availableOnly,
 				unavailableOnly: unavailableOnly,
 				snapshotOnly:    snapshotOnly,
+				pace:            pace,
 			})
 		},
 	}
@@ -219,6 +220,7 @@ func newUsageCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&availableOnly, "available", "a", false, "Show only available accounts")
 	cmd.Flags().BoolVarP(&unavailableOnly, "unavailable", "u", false, "Show only unavailable accounts")
 	cmd.Flags().BoolVarP(&snapshotOnly, "snapshot-only", "s", false, "Use saved snapshots only (no live creds, writes, or token refresh)")
+	cmd.Flags().BoolVar(&pace, "pace", false, "Overlay a linear burn-rate marker and over/under-pace text")
 	cmd.MarkFlagsMutuallyExclusive("available", "unavailable")
 	return cmd
 }

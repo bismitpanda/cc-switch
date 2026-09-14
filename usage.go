@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -23,6 +24,7 @@ type usageLimit struct {
 	Severity string
 	Active   bool
 	Order    int
+	Window   time.Duration
 }
 
 var usageKindLabels = map[string]string{
@@ -47,6 +49,17 @@ func coreUsageKind(kind string) string {
 		return "weekly"
 	default:
 		return ""
+	}
+}
+
+func usageWindow(kind string) time.Duration {
+	switch kind {
+	case "session", "five_hour":
+		return 5 * time.Hour
+	case "weekly_all", "weekly_scoped", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_cowork":
+		return 7 * 24 * time.Hour
+	default:
+		return 0
 	}
 }
 
@@ -90,6 +103,7 @@ func parseLimitsArray(limits []any) []usageLimit {
 			Severity: severity,
 			Active:   active,
 			Order:    i,
+			Window:   usageWindow(kind),
 		})
 	}
 	return out
@@ -131,6 +145,7 @@ func parseLegacyUsageLimits(raw map[string]any) []usageLimit {
 			Percent:  percent,
 			ResetsAt: resetsAt,
 			Order:    i,
+			Window:   usageWindow(k),
 		})
 	}
 	return out
@@ -214,26 +229,79 @@ const (
 	usageMinLabelW = 16
 )
 
-func usageBar(percent float64, severity string, active bool) string {
-	filled := int(percent / 100 * usageBarWidth)
-	if filled > usageBarWidth {
-		filled = usageBarWidth
-	}
-	if filled < 0 {
-		filled = 0
-	}
-	empty := usageBarWidth - filled
+func usageBar(percent float64, severity string, active bool, pace float64, showPace bool) string {
+	filled := max(min(int(percent/100*usageBarWidth), usageBarWidth), 0)
 
 	fillStyle := barFillStyle
+	fillColor := barFillColor
 	switch {
 	case severity == "critical":
 		fillStyle = criticalBarStyle
+		fillColor = criticalBarColor
 	case active:
 		fillStyle = activeBarStyle
+		fillColor = activeBarColor
 	}
 
-	return fillStyle.Render(strings.Repeat("█", filled)) +
-		barEmptyStyle.Render(strings.Repeat("░", empty))
+	if !showPace {
+		empty := usageBarWidth - filled
+		return fillStyle.Render(strings.Repeat("█", filled)) +
+			barEmptyStyle.Render(strings.Repeat("█", empty))
+	}
+
+	paceIdx := int(pace / 100 * usageBarWidth)
+	if paceIdx >= usageBarWidth {
+		paceIdx = usageBarWidth - 1
+	}
+	if paceIdx < 0 {
+		paceIdx = 0
+	}
+
+	var b strings.Builder
+	for i := range usageBarWidth {
+		if i == paceIdx {
+			fg, bg := paceBlack, fillColor
+			if i >= filled {
+				fg, bg = paceWhite, barEmptyColor
+			}
+			b.WriteString(paceMarkStyle.Foreground(fg).Background(bg).Render("│"))
+			continue
+		}
+		if i < filled {
+			b.WriteString(fillStyle.Render("█"))
+		} else {
+			b.WriteString(barEmptyStyle.Render("█"))
+		}
+	}
+	return b.String()
+}
+
+func limitPacePercent(limit usageLimit, now time.Time) (float64, bool) {
+	if limit.Window <= 0 {
+		return 0, false
+	}
+	reset, ok := parseResetsAt(limit.ResetsAt)
+	if !ok {
+		return 0, false
+	}
+	remaining := reset.Sub(now)
+	if remaining <= 0 || remaining > limit.Window {
+		return 0, false
+	}
+	elapsed := limit.Window - remaining
+	return 100 * float64(elapsed) / float64(limit.Window), true
+}
+
+func formatPaceDelta(used, pace float64) (string, lipgloss.Style) {
+	delta := int(math.Round(used)) - int(math.Round(pace))
+	switch {
+	case delta > 0:
+		return fmt.Sprintf("%d%% over pace", delta), activeBarStyle
+	case delta < 0:
+		return fmt.Sprintf("%d%% under pace", -delta), successStyle
+	default:
+		return "on pace", mutedStyle
+	}
 }
 
 func usageLabelWidth(limits []usageLimit) int {
@@ -246,9 +314,13 @@ func usageLabelWidth(limits []usageLimit) int {
 	return width
 }
 
-func printUsageLimit(limit usageLimit, labelWidth int) {
+func printUsageLimit(limit usageLimit, labelWidth int, showPace bool) {
 	initStyles()
-	bar := usageBar(limit.Percent, limit.Severity, limit.Active)
+	pace, hasPace := 0.0, false
+	if showPace {
+		pace, hasPace = limitPacePercent(limit, time.Now())
+	}
+	bar := usageBar(limit.Percent, limit.Severity, limit.Active, pace, hasPace)
 	pct := fmt.Sprintf("%3.0f%%", limit.Percent)
 	line := lipgloss.JoinHorizontal(lipgloss.Top,
 		"  ",
@@ -258,13 +330,17 @@ func printUsageLimit(limit usageLimit, labelWidth int) {
 		" ",
 		mutedStyle.Width(usagePctWidth).Align(lipgloss.Right).Render(pct),
 	)
+	if hasPace {
+		text, style := formatPaceDelta(limit.Percent, pace)
+		line += " " + style.Render("— "+text)
+	}
 	if limit.ResetsAt != "" {
 		line += " " + mutedStyle.Render("— "+formatResetAt(limit.ResetsAt))
 	}
 	lipgloss.Println(line)
 }
 
-func printAccountUsage(name string, limits []usageLimit, active, grayed bool) {
+func printAccountUsage(name string, limits []usageLimit, active, grayed, showPace bool) {
 	initStyles()
 	if grayed {
 		line := mutedStyle.Render(name)
@@ -285,7 +361,7 @@ func printAccountUsage(name string, limits []usageLimit, active, grayed bool) {
 	}
 	labelWidth := usageLabelWidth(limits)
 	for _, limit := range limits {
-		printUsageLimit(limit, labelWidth)
+		printUsageLimit(limit, labelWidth, showPace)
 	}
 }
 
@@ -555,7 +631,7 @@ func sortUsableByUsage(results []accountUsageResult) {
 	})
 }
 
-func printUnavailableAccounts(results []accountUsageResult) {
+func printUnavailableAccounts(results []accountUsageResult, showPace bool) {
 	initStyles()
 	sortUnavailableByReset(results)
 	for i, res := range results {
@@ -567,7 +643,7 @@ func printUnavailableAccounts(results []accountUsageResult) {
 			printMuted("  " + res.err.Error())
 			continue
 		}
-		printAccountUsage(res.name, res.limits, false, true)
+		printAccountUsage(res.name, res.limits, false, true, showPace)
 	}
 }
 
@@ -576,6 +652,7 @@ type usageOptions struct {
 	availableOnly   bool
 	unavailableOnly bool
 	snapshotOnly    bool
+	pace            bool
 }
 
 func usageResultUnavailable(res accountUsageResult) bool {
@@ -675,7 +752,7 @@ func cmdUsage(name string, opts usageOptions) {
 			printError(activeRes.name, activeRes.err.Error())
 			return
 		}
-		printAccountUsage(activeRes.name, activeRes.limits, true, true)
+		printAccountUsage(activeRes.name, activeRes.limits, true, true, opts.pace)
 		return
 
 	case opts.activeOnly && opts.availableOnly:
@@ -691,7 +768,7 @@ func cmdUsage(name string, opts usageOptions) {
 			printMuted("(active account is unavailable)")
 			return
 		}
-		printAccountUsage(activeRes.name, activeRes.limits, true, false)
+		printAccountUsage(activeRes.name, activeRes.limits, true, false, opts.pace)
 		return
 
 	case opts.activeOnly:
@@ -703,7 +780,7 @@ func cmdUsage(name string, opts usageOptions) {
 			printError(activeRes.name, activeRes.err.Error())
 			return
 		}
-		printAccountUsage(activeRes.name, activeRes.limits, true, false)
+		printAccountUsage(activeRes.name, activeRes.limits, true, false, opts.pace)
 		return
 
 	case opts.unavailableOnly:
@@ -714,13 +791,13 @@ func cmdUsage(name string, opts usageOptions) {
 			printMuted("(no unavailable accounts)")
 			return
 		}
-		printUnavailableAccounts(unavailable)
+		printUnavailableAccounts(unavailable, opts.pace)
 		return
 
 	case opts.availableOnly:
 		printed := false
 		if activeRes != nil && !usageResultUnavailable(*activeRes) {
-			printAccountUsage(activeRes.name, activeRes.limits, true, false)
+			printAccountUsage(activeRes.name, activeRes.limits, true, false, opts.pace)
 			printed = true
 		}
 		sortUsableByUsage(usable)
@@ -728,7 +805,7 @@ func cmdUsage(name string, opts usageOptions) {
 			if printed {
 				fmt.Println()
 			}
-			printAccountUsage(res.name, res.limits, false, false)
+			printAccountUsage(res.name, res.limits, false, false, opts.pace)
 			printed = true
 		}
 		if !printed {
@@ -742,7 +819,7 @@ func cmdUsage(name string, opts usageOptions) {
 		if activeRes.err != nil {
 			printError(activeRes.name, activeRes.err.Error())
 		} else {
-			printAccountUsage(activeRes.name, activeRes.limits, true, false)
+			printAccountUsage(activeRes.name, activeRes.limits, true, false, opts.pace)
 		}
 		printed = true
 	}
@@ -751,13 +828,13 @@ func cmdUsage(name string, opts usageOptions) {
 		if printed {
 			fmt.Println()
 		}
-		printAccountUsage(res.name, res.limits, false, false)
+		printAccountUsage(res.name, res.limits, false, false, opts.pace)
 		printed = true
 	}
 	if len(unavailable) > 0 {
 		if printed {
 			fmt.Println()
 		}
-		printUnavailableAccounts(unavailable)
+		printUnavailableAccounts(unavailable, opts.pace)
 	}
 }

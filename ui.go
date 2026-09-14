@@ -21,10 +21,18 @@ var (
 	errorStyle       lipgloss.Style
 	accountStyle     lipgloss.Style
 	labelStyle       lipgloss.Style
+	barFillColor     = lipgloss.Color("42")
+	barEmptyColor    = lipgloss.Color("238")
+	criticalBarColor = lipgloss.Color("203")
+	activeBarColor   = lipgloss.Color("214")
+	paceBlack        = lipgloss.Color("#000000")
+	paceWhite        = lipgloss.Color("#ffffff")
+
 	barFillStyle     lipgloss.Style
 	barEmptyStyle    lipgloss.Style
 	criticalBarStyle lipgloss.Style
 	activeBarStyle   lipgloss.Style
+	paceMarkStyle    lipgloss.Style
 	whoamiKeyStyle   lipgloss.Style
 	whoamiValStyle   lipgloss.Style
 	helpTitleStyle   lipgloss.Style
@@ -48,10 +56,11 @@ func initStyles() {
 	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 	accountStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
 	labelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	barFillStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	barEmptyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-	criticalBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	activeBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	barFillStyle = lipgloss.NewStyle().Foreground(barFillColor)
+	barEmptyStyle = lipgloss.NewStyle().Foreground(barEmptyColor)
+	criticalBarStyle = lipgloss.NewStyle().Foreground(criticalBarColor)
+	activeBarStyle = lipgloss.NewStyle().Foreground(activeBarColor)
+	paceMarkStyle = lipgloss.NewStyle().Foreground(paceBlack)
 	whoamiKeyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	whoamiValStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	helpTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
