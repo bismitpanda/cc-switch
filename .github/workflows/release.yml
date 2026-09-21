@@ -1,8 +1,9 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -12,14 +13,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
       - name: Build
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
           mkdir -p dist
           for GOOS in linux windows; do
             for GOARCH in amd64 arm64; do
@@ -31,7 +36,57 @@ jobs:
             done
           done
 
-      - name: Upload release assets
+      - name: Release notes
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)"
+          LEAD="$(git tag -l --format='%(contents:subject)' "$VERSION" | sed '/^$/d')"
+
+          {
+            if [ -n "$LEAD" ]; then
+              printf '%s\n\n' "$LEAD"
+            fi
+            if [ -n "$PREV" ]; then
+              printf '### Changes since %s\n' "$PREV"
+              git log --pretty=format:'- %s' "${PREV}..HEAD"
+            else
+              printf '### Changes\n'
+              git log --pretty=format:'- %s'
+            fi
+            printf '\n\n'
+            cat <<'EOF'
+          ### Install
+          Linux:
+
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/bismitpanda/cc-switch/main/install.sh | sh
+          ```
+
+          Windows (PowerShell):
+
+          ```powershell
+          irm https://raw.githubusercontent.com/bismitpanda/cc-switch/main/install.ps1 | iex
+          ```
+
+          Or download a binary below, or:
+
+          ```bash
+          go install github.com/bismitpanda/cc-switch@latest
+          ```
+
+          > **Note:** macOS is not supported yet (Keychain-backed credentials). Linux and Windows work.
+
+          ### Binaries
+          Prebuilt Linux and Windows builds (amd64/arm64) are attached below.
+          EOF
+          } > release-notes.md
+
+      - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
           files: dist/*
