@@ -359,7 +359,11 @@ func cmdUse(name string) {
 	}
 
 	from, _ := activeSavedAccountName()
-	if from != "" && from != name {
+	if from == name {
+		printMuted(fmt.Sprintf("already using %s", accountStyle.Render(name)))
+		return
+	}
+	if from != "" {
 		if _, err := syncActiveSnapshot(); err != nil {
 			fatalf("%v", err)
 		}
